@@ -1,0 +1,104 @@
+[
+  {
+    "name": "Black Casual Loafer Boot",
+    "price": 45000,
+    "category": "Casual Boots",
+    "description": "Comfortable handcrafted leather loafer boot perfect for daily wear around Buea. Breathable lining and durable rubber sole.",
+    "imageUrl": "/images/black-casual-loafer-boot.jpg",
+    "variants": [
+      {
+        "size": "39",
+        "color": "black",
+        "stock": 8,
+        "sku": "BLACK-CASUAL-LOAFER-BOOT-BLACK-39",
+        "price": 45000
+      },
+      {
+        "size": "40",
+        "color": "black",
+        "stock": 12,
+        "sku": "BLACK-CASUAL-LOAFER-BOOT-BLACK-40",
+        "price": 45000
+      },
+      {
+        "size": "41",
+        "color": "black",
+        "stock": 10,
+        "sku": "BLACK-CASUAL-LOAFER-BOOT-BLACK-41",
+        "price": 45000
+      },
+      {
+        "size": "42",
+        "color": "black",
+        "stock": 7,
+        "sku": "BLACK-CASUAL-LOAFER-BOOT-BLACK-42",
+        "price": 45000
+      },
+      {
+        "size": "43",
+        "color": "black",
+        "stock": 5,
+        "sku": "BLACK-CASUAL-LOAFER-BOOT-BLACK-43",
+        "price": 45000
+      },
+      {
+        "size": "44",
+        "color": "black",
+        "stock": 3,
+        "sku": "BLACK-CASUAL-LOAFER-BOOT-BLACK-44",
+        "price": 45000
+      }
+    ]
+  },
+  {
+    "name": "Brown Casual Loafer Boot",
+    "price": 45000,
+    "category": "Casual Boots",
+    "description": "Comfortable handcrafted leather loafer boot perfect for daily wear around Buea. Breathable lining and durable rubber sole.",
+    "imageUrl": "/images/brown-casual-loafer-boot.jpg",
+    "variants": [
+      {
+        "size": "39",
+        "color": "brown",
+        "stock": 10,
+        "sku": "BROWN-CASUAL-LOAFER-BOOT-BROWN-39",
+        "price": 45000
+      },
+      {
+        "size": "40",
+        "color": "brown",
+        "stock": 14,
+        "sku": "BROWN-CASUAL-LOAFER-BOOT-BROWN-40",
+        "price": 45000
+      },
+      {
+        "size": "41",
+        "color": "brown",
+        "stock": 12,
+        "sku": "BROWN-CASUAL-LOAFER-BOOT-BROWN-41",
+        "price": 45000
+      },
+      {
+        "size": "42",
+        "color": "brown",
+        "stock": 9,
+        "sku": "BROWN-CASUAL-LOAFER-BOOT-BROWN-42",
+        "price": 45000
+      },
+      {
+        "size": "43",
+        "color": "brown",
+        "stock": 6,
+        "sku": "BROWN-CASUAL-LOAFER-BOOT-BROWN-43",
+        "price": 45000
+      },
+      {
+        "size": "44",
+        "color": "brown",
+        "stock": 4,
+        "sku": "BROWN-CASUAL-LOAFER-BOOT-BROWN-44",
+        "price": 45000
+      }
+    ]
+  }
+]
