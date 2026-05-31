@@ -4,11 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "postinstall": "prisma generate",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "build:css": "postcss src/input.css -o dist/output.css",
-    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@ai-sdk/xai": "^3.0.92",
