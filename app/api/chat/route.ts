@@ -1,13 +1,11 @@
-// app/api/chat/route.ts
 import { streamText } from 'ai';
 import { xai } from '@ai-sdk/xai';
 import { NextRequest } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
+import { prisma } from '@/lib/prisma';   // ✅ import the singleton
 
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
-export const prisma = globalForPrisma.prisma || new PrismaClient();
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+// ✅ Prevent static generation – this route must be dynamic
+export const dynamic = 'force-dynamic';
 
 export const maxDuration = 30;
 
@@ -48,7 +46,7 @@ export async function POST(req: NextRequest) {
   const tools = {
     showProducts: {
       description: 'Show available leather shoes to the customer. Use when customer asks to see shoes, browse, or look at products.',
-      parameters: z.object({
+      inputSchema: z.object({
         category: z.enum(['casual', 'formal', 'boots', 'all']).optional().describe('Filter by category if specified'),
       }),
       execute: async ({ category }: { category?: string }) => {
@@ -71,14 +69,14 @@ export async function POST(req: NextRequest) {
     },
     addToCart: {
       description: 'Add a product to the customer\'s shopping cart. Use when customer wants to buy, purchase, or add an item.',
-      parameters: z.object({
+      inputSchema: z.object({
         productName: z.string().describe('The name of the product to add'),
         size: z.number().describe('Shoe size (39-44)'),
         color: z.string().optional().describe('Color if specified'),
         quantity: z.number().default(1).describe('How many pairs')
       }),
       execute: async ({ productName, size, color, quantity }: { productName: string; size: number; color?: string; quantity: number }) => {
-        const variant = await prisma.productVariant.findFirst({
+        const variant = await prisma.variant.findFirst({
           where: {
             product: { name: { contains: productName, mode: 'insensitive' } },
             size: size,
@@ -92,13 +90,19 @@ export async function POST(req: NextRequest) {
             message: `Sorry, we don't have ${productName} in size ${size}. Would you like to check other sizes?`
           };
         }
+
         let cart = await prisma.cart.findUnique({ where: { sessionId: effectiveSessionId } });
         if (!cart) {
           cart = await prisma.cart.create({ data: { sessionId: effectiveSessionId } });
         }
+
         const existingItem = await prisma.cartItem.findFirst({
           where: { cartId: cart.id, variantId: variant.id }
         });
+
+        const price = variant.product.price;
+        const productId = variant.product.id;
+
         if (existingItem) {
           await prisma.cartItem.update({
             where: { id: existingItem.id },
@@ -106,25 +110,31 @@ export async function POST(req: NextRequest) {
           });
         } else {
           await prisma.cartItem.create({
-            data: { cartId: cart.id, variantId: variant.id, quantity }
+            data: {
+              cartId: cart.id,
+              variantId: variant.id,
+              productId: productId,
+              price: price,
+              quantity: quantity
+            }
           });
         }
+
         return {
           success: true,
-          message: `✅ Added ${variant.product.name} size ${size} to your cart! Price: ${variant.product.price.toLocaleString()} FCFA. Want to see your cart or continue shopping?`
+          message: `✅ Added ${variant.product.name} size ${size} to your cart! Price: ${price.toLocaleString()} FCFA. Want to see your cart or continue shopping?`
         };
       }
     },
     showCart: {
       description: 'Show what\'s currently in the customer\'s shopping cart',
-      parameters: z.object({}),
+      inputSchema: z.object({}),
       execute: async () => {
         const cart = await getOrCreateCart(effectiveSessionId);
         if (!cart || cart.items.length === 0) {
           return { message: 'Your cart is empty. Say "show shoes" to browse our collection!' };
         }
 
-        // Filter out items with null variant (TypeScript safety)
         const validItems = cart.items.filter(item => item.variant !== null);
         if (validItems.length === 0) {
           return { message: 'Your cart contains invalid items. Please try adding products again.' };
@@ -182,5 +192,5 @@ Always confirm after adding to cart. Be warm and helpful!`;
     temperature: 0.7,
   });
 
-  return result.toDataStreamResponse();
+  return result.toTextStreamResponse();
 }
