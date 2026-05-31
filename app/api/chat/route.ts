@@ -60,14 +60,14 @@ export async function POST(req: NextRequest) {
           take: 10
         }) as ProductWithVariants[];
 
-        const productList = products.map((p: ProductWithVariants) => ({
-          name: p.name,
-          price: `${p.price.toLocaleString()} FCFA`,
-          sizes: p.variants.map((v: Variant) => v.size)
-                         .filter((v: number, i: number, a: number[]) => a.indexOf(v) === i)
-                         .join(', '),
-          description: p.description
-        }));
+        const productList = products.map((p: any) => ({
+  name: p.name,
+  price: `${p.price.toLocaleString()} FCFA`,
+  sizes: p.variants.map((v: any) => v.size)
+                   .filter((v: string, i: number, a: string[]) => a.indexOf(v) === i)
+                   .join(', '),
+  description: p.description
+}));
 
         return {
           products: productList,
