@@ -2,11 +2,15 @@ import { streamText } from 'ai';
 import { xai } from '@ai-sdk/xai';
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { prisma } from '@/lib/prisma';   // ✅ import the singleton
+import { prisma } from '@/lib/prisma';
+import { Product, Variant } from '@prisma/client';
 
-// ✅ Prevent static generation – this route must be dynamic
+// Type for Product with included variants
+type ProductWithVariants = Product & {
+  variants: Variant[];
+};
+
 export const dynamic = 'force-dynamic';
-
 export const maxDuration = 30;
 
 export async function POST(req: NextRequest) {
@@ -54,13 +58,17 @@ export async function POST(req: NextRequest) {
           where: category && category !== 'all' ? { category } : {},
           include: { variants: true },
           take: 10
-        });
-        const productList = products.map(p => ({
+        }) as ProductWithVariants[];
+
+        const productList = products.map((p: ProductWithVariants) => ({
           name: p.name,
           price: `${p.price.toLocaleString()} FCFA`,
-          sizes: p.variants.map(v => v.size).filter((v,i,a) => a.indexOf(v) === i).join(', '),
+          sizes: p.variants.map((v: Variant) => v.size)
+                         .filter((v: number, i: number, a: number[]) => a.indexOf(v) === i)
+                         .join(', '),
           description: p.description
         }));
+
         return {
           products: productList,
           message: `Here are our ${category === 'all' || !category ? 'leather shoes' : category} shoes:\n${productList.map(p => `• ${p.name} - ${p.price}\n  Sizes: ${p.sizes}\n  ${p.description}`).join('\n\n')}\n\nTo buy, just say "add [product name] size [size]"`
