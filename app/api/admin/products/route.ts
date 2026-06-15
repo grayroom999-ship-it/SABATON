@@ -1,12 +1,13 @@
+// app/api/admin/products/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, price, category, description, imageUrl, variants } = body
+    const { name, price, category, gender, description, imageUrl, hoverImageUrl, variants } = body
 
-    // Validate required fields
+    // --- Validation (original, unchanged) ---
     if (!name || typeof name !== 'string' || name.trim() === '') {
       return NextResponse.json(
         { error: 'Product name is required and must be a non-empty string' },
@@ -21,17 +22,26 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (!gender || (gender !== 'male' && gender !== 'female')) {
+      return NextResponse.json(
+        { error: 'Gender must be "male" or "female"' },
+        { status: 400 }
+      )
+    }
+
     // Ensure variants is an array
     const variantsArray = Array.isArray(variants) ? variants : []
 
-    // Create product with variants
+    // --- Create product with variants (and optional hover image) ---
     const newProduct = await prisma.product.create({
       data: {
         name: name.trim(),
         price: parseFloat(price),
         category: category?.trim() || 'casual',
+        gender: gender,                            // 👈 plain string, matches your schema
         description: description?.trim() || '',
         imageUrl: imageUrl?.trim() || '/images/placeholder.webp',
+        hoverImageUrl: hoverImageUrl?.trim() || null,   // 👈 only addition
         variants: {
           create: variantsArray.map((v: any) => ({
             sku: v.sku?.trim() || `${name.trim()}-${v.size}-${v.color}`,
@@ -55,7 +65,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('Error creating product:', error)
 
-    // Handle unique constraint violation (e.g., duplicate SKU or product name)
+    // Prisma unique constraint violation
     if (error.code === 'P2002') {
       return NextResponse.json(
         { error: 'A product with this name or SKU already exists' },

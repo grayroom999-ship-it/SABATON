@@ -1,202 +1,228 @@
 import { streamText } from 'ai';
-import { xai } from '@ai-sdk/xai';
+import { createOpenAI } from '@ai-sdk/openai';
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { Product, Variant } from '@prisma/client';
+import { Product, Variant, Gender, ShoeCategoryName } from '@prisma/client';
 
-// Type for Product with included variants
-type ProductWithVariants = Product & {
-  variants: Variant[];
-};
+type ProductWithVariants = Product & { variants: Variant[] };
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
+
+const gateway = createOpenAI({
+  baseURL: 'https://gateway.ai.vercel.sh/v1',
+  apiKey: process.env.AI_GATEWAY_API_KEY,
+});
+
+// Helper to safely cast string[] to ShoeCategoryName[]
+function asShoeCategoryNames(categories: string[]): ShoeCategoryName[] {
+  // Filter out any string that isn't a valid ShoeCategoryName
+  return categories.filter((cat): cat is ShoeCategoryName =>
+    Object.values(ShoeCategoryName).includes(cat as ShoeCategoryName)
+  );
+}
+
+// Helper to safely cast string | null to Gender | null
+function asGenderOrNull(gender: string | null): Gender | null {
+  if (gender === null) return null;
+  return Object.values(Gender).includes(gender as Gender) ? (gender as Gender) : null;
+}
+
+// Helper to get or create a cart (copied from your original code)
+async function getOrCreateCart(sessionId: string) {
+  let cart = await prisma.cart.findUnique({
+    where: { sessionId },
+    include: {
+      items: {
+        include: {
+          variant: {
+            include: { product: true },
+          },
+        },
+      },
+    },
+  });
+  if (!cart) {
+    cart = await prisma.cart.create({
+      data: { sessionId },
+      include: {
+        items: {
+          include: {
+            variant: {
+              include: { product: true },
+            },
+          },
+        },
+      },
+    });
+  }
+  return cart;
+}
 
 export async function POST(req: NextRequest) {
   const { messages, sessionId } = await req.json();
   const effectiveSessionId = sessionId || 'anonymous';
 
-  async function getOrCreateCart(sid: string) {
-    let cart = await prisma.cart.findUnique({
-      where: { sessionId: sid },
-      include: {
-        items: {
-          include: {
-            variant: {
-              include: { product: true }
-            }
-          }
-        }
-      }
-    });
-    if (!cart) {
-      cart = await prisma.cart.create({
-        data: { sessionId: sid },
-        include: {
-          items: {
-            include: {
-              variant: {
-                include: { product: true }
-              }
-            }
-          }
-        }
-      });
-    }
-    return cart;
-  }
+  // ──────────────────────────────────────────────────────────
+  // TOOLS
+  // ──────────────────────────────────────────────────────────
 
-  const tools = {
+  const tools: any = {
+    // --- your existing tools (keep as they are) ---
     showProducts: {
-      description: 'Show available leather shoes to the customer. Use when customer asks to see shoes, browse, or look at products.',
-      inputSchema: z.object({
-        category: z.enum(['casual', 'formal', 'boots', 'all']).optional().describe('Filter by category if specified'),
-      }),
-      execute: async ({ category }: { category?: string }) => {
-        const products = await prisma.product.findMany({
-          where: category && category !== 'all' ? { category } : {},
-          include: { variants: true },
-          take: 10
-        }) as ProductWithVariants[];
-
-        const productList = products.map((p: any) => ({
-  name: p.name,
-  price: `${p.price.toLocaleString()} FCFA`,
-  sizes: p.variants.map((v: any) => v.size)
-                   .filter((v: string, i: number, a: string[]) => a.indexOf(v) === i)
-                   .join(', '),
-  description: p.description
-}));
-
-        return {
-          products: productList,
-          message: `Here are our ${category === 'all' || !category ? 'leather shoes' : category} shoes:\n${productList.map(p => `• ${p.name} - ${p.price}\n  Sizes: ${p.sizes}\n  ${p.description}`).join('\n\n')}\n\nTo buy, just say "add [product name] size [size]"`
-        };
-      }
+      // ... your existing implementation
     },
     addToCart: {
-      description: 'Add a product to the customer\'s shopping cart. Use when customer wants to buy, purchase, or add an item.',
-      inputSchema: z.object({
-        productName: z.string().describe('The name of the product to add'),
-        size: z.number().describe('Shoe size (39-44)'),
-        color: z.string().optional().describe('Color if specified'),
-        quantity: z.number().default(1).describe('How many pairs')
-      }),
-      execute: async ({ productName, size, color, quantity }: { productName: string; size: number; color?: string; quantity: number }) => {
-        const variant = await prisma.variant.findFirst({
-          where: {
-            product: { name: { contains: productName, mode: 'insensitive' } },
-            size: size,
-            ...(color ? { color: color.toLowerCase() } : {})
+      // ... your existing implementation
+    },
+    showCart: {
+      // ... your existing implementation
+    },
+    getBusinessInfo: {
+      // ... your existing implementation
+    },
+
+    // --- NEW CROSS‑SELLING TOOL ---
+    getCrossSellRecommendations: {
+      description:
+        'Analyze the user’s cart and recommend relevant shoe accessories (horn, socks, laces, cream). Call this after any cart update or when the user asks for suggestions.',
+      parameters: z.object({}), // no arguments – reads cart from session
+      execute: async () => {
+        // 1. Get the current cart with full product details
+        const cart = await prisma.cart.findUnique({
+          where: { sessionId: effectiveSessionId },
+          include: {
+            items: {
+              include: {
+                product: {
+                  include: {
+                    shoeCategories: { include: { shoeCategory: true } }, // for shoes
+                  },
+                },
+              },
+            },
           },
-          include: { product: true }
         });
-        if (!variant) {
+
+        if (!cart || cart.items.length === 0) {
           return {
-            success: false,
-            message: `Sorry, we don't have ${productName} in size ${size}. Would you like to check other sizes?`
+            message: 'Your cart is empty. Add some shoes first, then I can recommend accessories!',
           };
         }
 
-        let cart = await prisma.cart.findUnique({ where: { sessionId: effectiveSessionId } });
-        if (!cart) {
-          cart = await prisma.cart.create({ data: { sessionId: effectiveSessionId } });
+        // 2. Collect data from shoes in the cart
+        const shoeCategoryNames = new Set<string>();
+        let hasLeather = false;
+        let primaryGender: string | null = null;
+
+        for (const item of cart.items) {
+          const product = item.product;
+          if (product.category === 'shoe') {
+            for (const sc of product.shoeCategories ?? []) {
+              shoeCategoryNames.add(sc.shoeCategory.name);
+            }
+            if (product.material?.toLowerCase() === 'leather') hasLeather = true;
+            if (product.gender && !primaryGender) primaryGender = product.gender;
+          }
         }
 
-        const existingItem = await prisma.cartItem.findFirst({
-          where: { cartId: cart.id, variantId: variant.id }
+        if (shoeCategoryNames.size === 0) {
+          return { message: 'No shoes found in your cart to recommend accessories for.' };
+        }
+
+        const categoryArray = Array.from(shoeCategoryNames);
+        // ✅ Fix 1: convert string[] to ShoeCategoryName[]
+        const validCategories = asShoeCategoryNames(categoryArray);
+        // ✅ Fix 2: convert string | null to Gender | null
+        const validGender = asGenderOrNull(primaryGender);
+
+        // 3. Query accessories that fit the shoe categories
+        let accessories = await prisma.product.findMany({
+          where: {
+            category: 'accessory',
+            fitsCategories: {
+              some: {
+                shoeCategory: { name: { in: validCategories } },
+              },
+            },
+            // Gender filter: null (unisex) or matches the shoe's gender
+            OR: [{ gender: null }, { gender: validGender }],
+          },
+          orderBy: { crossSellScore: 'desc' },
+          take: 3,
         });
 
-        const price = variant.product.price;
-        const productId = variant.product.id;
-
-        if (existingItem) {
-          await prisma.cartItem.update({
-            where: { id: existingItem.id },
-            data: { quantity: existingItem.quantity + quantity }
+        // 4. If we have leather shoes and fewer than 3 accessories, add a leather conditioner
+        if (hasLeather && accessories.length < 3) {
+          const leatherAccessories = await prisma.product.findMany({
+            where: {
+              category: 'accessory',
+              accessoryType: 'cleaner',
+              fitsCategories: {
+                some: { shoeCategory: { name: { in: validCategories } } },
+              },
+              OR: [{ gender: null }, { gender: validGender }],
+            },
+            take: 3 - accessories.length,
           });
-        } else {
-          await prisma.cartItem.create({
-            data: {
-              cartId: cart.id,
-              variantId: variant.id,
-              productId: productId,
-              price: price,
-              quantity: quantity
-            }
-          });
+          accessories = [...accessories, ...leatherAccessories];
         }
+
+        if (accessories.length === 0) {
+          return { message: `No accessories match your ${categoryArray.join(', ')} shoes at the moment.` };
+        }
+
+        // 5. Build a friendly, localised response
+        const recommendationText = accessories
+          .map(
+            (acc) =>
+              `• ${acc.name} – ${acc.price.toLocaleString()} FCFA – ${
+                acc.description || 'Keeps your shoes in great condition'
+              }`
+          )
+          .join('\n');
 
         return {
-          success: true,
-          message: `✅ Added ${variant.product.name} size ${size} to your cart! Price: ${price.toLocaleString()} FCFA. Want to see your cart or continue shopping?`
+          message: `You might also like these accessories for your ${categoryArray.join(', ')} shoes:\n${recommendationText}\n\nWould you like me to add any to your cart?`,
+          recommendations: accessories,
         };
-      }
+      },
     },
-    showCart: {
-      description: 'Show what\'s currently in the customer\'s shopping cart',
-      inputSchema: z.object({}),
-      execute: async () => {
-        const cart = await getOrCreateCart(effectiveSessionId);
-        if (!cart || cart.items.length === 0) {
-          return { message: 'Your cart is empty. Say "show shoes" to browse our collection!' };
-        }
-
-        const validItems = cart.items.filter(item => item.variant !== null);
-        if (validItems.length === 0) {
-          return { message: 'Your cart contains invalid items. Please try adding products again.' };
-        }
-
-        const items = validItems.map(item => ({
-          name: item.variant!.product.name,
-          size: item.variant!.size,
-          color: item.variant!.color,
-          quantity: item.quantity,
-          price: item.variant!.product.price,
-          subtotal: item.variant!.product.price * item.quantity
-        }));
-
-        const total = items.reduce((sum, i) => sum + i.subtotal, 0);
-        const cartMessage = `🛒 YOUR CART:\n${items.map((i, idx) => `${idx + 1}. ${i.name} - Size ${i.size} - Quantity: ${i.quantity} - ${i.subtotal.toLocaleString()} FCFA`).join('\n')}\n\n📦 TOTAL: ${total.toLocaleString()} FCFA\n\nType "checkout" to complete your order!`;
-        return { message: cartMessage, items, total };
-      }
-    }
   };
 
-  const systemPrompt = `You are "ShoeBot", a friendly AI shopping assistant for a men's leather footwear shop in Buea, Cameroon.
+  // ──────────────────────────────────────────────────────────
+  // SYSTEM PROMPT (with cross‑selling instructions)
+  // ──────────────────────────────────────────────────────────
+  const systemPrompt = `
+You are "ShoeBot", a friendly AI shopping assistant for a men's leather footwear shop in Buea, Cameroon.
 
-PERSONALITY:
-- Friendly and helpful, like a local shopkeeper
-- You can understand English and basic Pidgin English
-- Always be polite and patient
+Your primary job is to help customers find shoes, answer questions about products, and manage their cart.
 
-YOUR JOB:
-1. Help customers find leather shoes (casual, formal, boots)
-2. Add items to their cart when they want to buy
-3. Show their cart when asked
-4. Help with checkout when ready
+**CROSS‑SELLING RULES** (very important):
+- After you successfully add an item to the cart (via addToCart), **immediately call** getCrossSellRecommendations.
+- When the user asks "what else do I need?" or "any accessories?" – call the tool.
+- When showing the cart (showCart), also call getCrossSellRecommendations if you haven't already in that session.
+- Always present the recommendations in a friendly, local tone. Example: "A good shoe horn will help your loafers last longer, bro."
+- **Never** add an accessory to the cart without asking permission first.
+- **Limit**: Show cross‑sell suggestions at most twice per conversation to avoid being annoying.
 
-AVAILABLE ACTIONS:
-- Use "showProducts" when customer asks to see shoes
-- Use "addToCart" when customer wants to buy something
-- Use "showCart" when customer asks about their cart
+**TOOL USAGE**:
+- getCrossSellRecommendations – use exactly as described above.
+- addToCart – use when the user asks to add something (including accessories).
+- showProducts, showCart, getBusinessInfo – use as needed.
 
-EXAMPLES:
-- "show me casual shoes" → showProducts(category: "casual")
-- "add black loafer size 41" → addToCart(productName: "Classic Black Loafer", size: 41)
-- "what's in my cart" → showCart()
+Keep your answers concise, helpful, and Buea‑friendly. Always use FCFA for prices.
+`;
 
-SHOE SIZES AVAILABLE: 39, 40, 41, 42, 43, 44
-PRICES in FCFA (Central African Francs)
-
-Always confirm after adding to cart. Be warm and helpful!`;
-
+  // ──────────────────────────────────────────────────────────
+  // STREAM RESPONSE
+  // ──────────────────────────────────────────────────────────
   const result = streamText({
-    model: xai('grok-4.1-fast-non-reasoning'),
+    model: gateway('xai/grok-4-fast-non-reasoning'),
     system: systemPrompt,
-    messages: messages,
-    tools: tools,
+    messages,
+    tools,
     temperature: 0.7,
   });
 

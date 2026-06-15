@@ -50,6 +50,33 @@ export default function HomePage() {
     setTimeout(() => setNewsletterStatus(''), 3000)
   }
 
+  const craftsmanshipSteps = [
+    {
+      step: "01",
+      title: "Leather Selection",
+      description: "Finest calf, cordovan & exotic skins from renowned tanneries.",
+      imagePath: "/images/Vass-Shoes-About-Us-2025.08.05.-1.jpg",
+    },
+    {
+      step: "02",
+      title: "Pattern Making & Cutting",
+      description: "Hand‑drawn patterns and precise cutting by master artisans.",
+      imagePath: "/images/Vass-Shoes-About-Us-2025.08.05.-2.jpg",
+    },
+    {
+      step: "03",
+      title: "Assembly & Lasting",
+      description: "Traditional hand‑lasting and stitching for perfect fit.",
+      imagePath: "/images/Vass-Shoes-About-Us-2025.08.05.-3.jpg",
+    },
+    {
+      step: "04",
+      title: "Finishing & Polishing",
+      description: "Meticulous hand‑finishing and wax polish for lasting shine.",
+      imagePath: "/images/Vass-Shoes-About-Us-2025.08.05.-4.jpg",
+    },
+  ]
+
   return (
     <>
       <Head>
@@ -65,7 +92,7 @@ export default function HomePage() {
       <main>
         <Navbar />
 
-        {/* HERO SECTION – VASS‑inspired: clean, image‑focused, minimal text */}
+        {/* HERO SECTION */}
         <section className="relative h-screen min-h-[600px] flex items-center justify-center text-white">
           <div className="absolute inset-0 z-0">
             <Image
@@ -95,7 +122,6 @@ export default function HomePage() {
               >
                 Shop Collection <ChevronRight size={18} />
               </Link>
-              {/* Fixed: dispatches event that ChatBot listens to */}
               <button
                 onClick={() => window.dispatchEvent(new CustomEvent('chatbot:open'))}
                 className="border border-white hover:bg-white/10 px-8 py-3 rounded-none font-medium transition backdrop-blur-sm inline-flex items-center gap-2"
@@ -106,7 +132,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* FEATURED PRODUCTS */}
+        {/* FEATURED PRODUCTS - Updated grid: 2 columns on mobile, 3 on desktop */}
         <section className="py-20 bg-white">
           <div className="container-custom">
             <div className="text-center mb-12">
@@ -116,32 +142,38 @@ export default function HomePage() {
             </div>
 
             {loading ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-                {[1, 2, 3, 4, 5, 6].map(i => <div key={i} className="bg-gray-100 animate-pulse h-80"></div>)}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-8">
+                {[1, 2, 3, 4, 5, 6].map(i => <div key={i} className="bg-gray-100 animate-pulse aspect-square"></div>)}
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-12">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-8">
                 {featuredProducts.map(product => (
-                  <div key={product.id} className="group">
-                    <Link href={`/products/${product.id}`} className="block relative h-80 bg-gray-100 overflow-hidden">
-                      {product.imageUrl ? (
-                        <Image
-                          src={product.imageUrl}
-                          alt={product.name}
-                          fill
-                          className="object-cover group-hover:scale-105 transition duration-700"
-                          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                        />
-                      ) : (
-                        <div className="flex items-center justify-center h-full text-6xl">👞</div>
-                      )}
+                  <div key={product.id} className="group bg-white border border-gray-100 hover:shadow-md transition-all duration-300">
+                    <Link href={`/products/${product.id}`} className="block">
+                      <div className="relative aspect-square bg-gray-100 overflow-hidden">
+                        {product.imageUrl ? (
+                          <Image
+                            src={product.imageUrl}
+                            alt={product.name}
+                            fill
+                            className="object-cover group-hover:scale-105 transition duration-500"
+                            sizes="(max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw"
+                          />
+                        ) : (
+                          <div className="flex items-center justify-center h-full text-4xl">👞</div>
+                        )}
+                      </div>
                     </Link>
-                    <div className="mt-4 text-center">
-                      <h3 className="font-medium text-gray-800">{product.name}</h3>
-                      <p className="text-amber-600 font-semibold mt-1">{product.price.toLocaleString()} FCFA</p>
+                    <div className="p-3 md:p-5 text-center">
+                      <h3 className="font-medium text-gray-800 group-hover:text-amber-600 transition text-sm md:text-base">
+                        {product.name}
+                      </h3>
+                      <p className="text-amber-600 font-semibold mt-1 text-sm md:text-base">
+                        {product.price.toLocaleString()} FCFA
+                      </p>
                       <button
                         onClick={() => window.dispatchEvent(new CustomEvent('chatbot:addProduct', { detail: { productName: product.name } }))}
-                        className="mt-3 text-sm text-gray-500 hover:text-amber-600 underline-offset-2 underline"
+                        className="mt-2 md:mt-3 text-xs md:text-sm text-gray-500 hover:text-amber-600 underline-offset-2 underline"
                       >
                         Chat to buy
                       </button>
@@ -158,7 +190,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* CRAFTSMANSHIP SECTION */}
+        {/* ORIGINAL "ABOUT US" SECTION (workshop image) */}
         <section className="py-20 bg-gray-50">
           <div className="container-custom">
             <div className="grid md:grid-cols-2 gap-12 items-center">
@@ -167,7 +199,7 @@ export default function HomePage() {
                   src="/images/workshop2.jpg"
                   alt="Artisan at work"
                   fill
-                  sizes="100vw"
+                  sizes="(max-width: 768px) 100vw, 50vw"
                   className="object-cover"
                   onError={(e) => {
                     e.currentTarget.style.display = 'none';
@@ -189,6 +221,71 @@ export default function HomePage() {
                   Discover our story <ChevronRight size={16} />
                 </Link>
               </div>
+            </div>
+          </div>
+        </section>
+
+        {/* CRAFTSMANSHIP SECTION – 2 paragraphs + 4 images */}
+        <section className="py-24 bg-white">
+          <div className="container-custom">
+            <div className="text-center mb-12">
+              <h2 className="text-3xl md:text-4xl font-light tracking-tight">The Art of Shoemaking</h2>
+              <div className="w-16 h-px bg-amber-500 mx-auto my-4"></div>
+            </div>
+
+            <div className="max-w-3xl mx-auto text-center space-y-4 text-gray-700 leading-relaxed mb-16">
+              <p>
+                From the selection of <span className="font-semibold">calf, cordovan or exotic skins</span> sourced from the best tanneries 
+                to the final polishing, every step is performed by meticulous craftsmen. A period of about <span className="font-semibold text-amber-700">6–7 weeks</span> 
+                is needed for custom‑made shoes – we build each pair to last for many years.
+              </p>
+              <p>
+                Our ready‑to‑wear collection undergoes the same careful processes. Manual shoemaking has changed little over centuries: 
+                our artisans shape shoes by hand, using tools they’ve adapted to their own touch.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {craftsmanshipSteps.map((step) => (
+                <div key={step.step} className="group bg-gray-50 rounded-sm overflow-hidden shadow-sm hover:shadow-md transition">
+                  <div className="relative aspect-[4/3] bg-gray-100 overflow-hidden">
+                    <Image
+                      src={step.imagePath}
+                      alt={step.title}
+                      fill
+                      className="object-cover group-hover:scale-105 transition duration-500"
+                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        target.style.display = 'none';
+                        const parent = target.parentElement;
+                        if (parent) {
+                          const fallback = document.createElement('div');
+                          fallback.className = 'absolute inset-0 flex flex-col items-center justify-center bg-amber-50 text-amber-700';
+                          fallback.innerHTML = `<span class="text-5xl mb-2">👞</span><span class="text-sm">${step.title}</span>`;
+                          parent.appendChild(fallback);
+                        }
+                      }}
+                    />
+                    <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded">
+                      {step.step}
+                    </div>
+                  </div>
+                  <div className="p-4 text-center">
+                    <h3 className="font-medium text-gray-800 mb-1">{step.title}</h3>
+                    <p className="text-sm text-gray-500">{step.description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="text-center mt-10">
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('chatbot:open'))}
+                className="inline-flex items-center gap-2 text-gray-700 border-b border-gray-400 pb-1 hover:border-amber-600 hover:text-amber-600 transition"
+              >
+                Inquire about custom‑made shoes <ChevronRight size={16} />
+              </button>
             </div>
           </div>
         </section>
@@ -242,14 +339,13 @@ export default function HomePage() {
             <div className="grid md:grid-cols-4 gap-8 mb-12">
               <div><h3 className="text-white text-xl font-light mb-3">Sabaton</h3><p className="text-sm">Handcrafted leather shoes from Buea, Cameroon. Quality that walks with you.</p></div>
               <div><h4 className="text-white font-medium mb-3">Shop</h4><ul className="space-y-2 text-sm"><li><Link href="/products" className="hover:text-white">All Products</Link></li><li><Link href="/products?category=mens" className="hover:text-white">Men's Shoes</Link></li><li><Link href="/products?category=womens" className="hover:text-white">Women's Boots</Link></li></ul></div>
-              <div><h4 className="text-white font-medium mb-3">Support</h4><ul className="space-y-2 text-sm"><li><a href="#" className="hover:text-white">Contact</a></li><li><a href="#" className="hover:text-white">Size Guide</a></li><li><a href="#" className="hover:text-white">Returns</a></li></ul></div>
+              <div><h4 className="text-white font-medium mb-3">Support</h4><ul className="space-y-2 text-sm"><li><Link href="/contact" className="hover:text-white">Contact</Link></li><li><a href="#" className="hover:text-white">Size Guide</a></li><li><a href="#" className="hover:text-white">Returns</a></li></ul></div>
               <div><h4 className="text-white font-medium mb-3">Contact</h4><ul className="space-y-2 text-sm"><li className="flex items-center gap-2"><MapPin size={14} /> Molyko, Buea</li><li className="flex items-center gap-2"><Phone size={14} /> +237 6XX XXX XXX</li><li className="flex items-center gap-2"><Mail size={14} /> hello@sabaton.cm</li></ul></div>
             </div>
             <div className="border-t border-gray-800 pt-6 text-center text-sm text-gray-500">&copy; {new Date().getFullYear()} Sabaton. All rights reserved.</div>
           </div>
         </footer>
 
-        {/* ChatBot - self-contained, listens to custom events */}
         <ChatBot />
       </main>
     </>

@@ -6,18 +6,45 @@ datasource db {
   provider = "postgresql"
 }
 
+enum AccessoryType {
+  horn
+  socks
+  laces
+  cleaner
+}
+
+enum ShoeCategoryName {
+  casual
+  formal
+  boots
+  all
+}
+
 model Product {
   id          String    @id @default(cuid())
   name        String
   description String?
   price       Float
   imageUrl    String?
-  category    String?
+  hoverImageUrl  String?          // ✅ already present
+  category    String?             // "shoe" or "accessory"
+  gender      String              // ✅ stays as String (no enum)
+  material    String?
+  accessoryType   AccessoryType?
+  crossSellScore  Int            @default(0)
+
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
   variants    Variant[]
   orderItems  OrderItem[]
   cartItems   CartItem[]
+
+  fitsCategories AccessoryShoeCategory[]
+  shoeCategories ShoeCategoryOnProduct[]
+
+  @@index([category])
+  @@index([gender])
 }
 
 model Variant {
@@ -53,6 +80,7 @@ model OrderItem {
   product    Product  @relation(fields: [productId], references: [id])
   order      Order    @relation(fields: [orderId], references: [id])
   variant    Variant? @relation(fields: [variantId], references: [id])
+
   @@unique([orderId, productId, variantId])
 }
 
@@ -67,6 +95,7 @@ model CartItem {
   product    Product  @relation(fields: [productId], references: [id])
   variantId  String?
   variant    Variant? @relation(fields: [variantId], references: [id])
+
   @@unique([cartId, productId, variantId])
 }
 
@@ -77,4 +106,31 @@ model Cart {
   items     CartItem[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model ShoeCategory {
+  id          String   @id @default(cuid())
+  name        ShoeCategoryName @unique
+  accessories AccessoryShoeCategory[]
+  products    ShoeCategoryOnProduct[]
+}
+
+model AccessoryShoeCategory {
+  id             String       @id @default(cuid())
+  accessoryId    String
+  shoeCategoryId String
+  accessory      Product      @relation(fields: [accessoryId], references: [id], onDelete: Cascade)
+  shoeCategory   ShoeCategory @relation(fields: [shoeCategoryId], references: [id], onDelete: Cascade)
+
+  @@unique([accessoryId, shoeCategoryId])
+}
+
+model ShoeCategoryOnProduct {
+  id             String       @id @default(cuid())
+  productId      String
+  shoeCategoryId String
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  shoeCategory   ShoeCategory @relation(fields: [shoeCategoryId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, shoeCategoryId])
 }

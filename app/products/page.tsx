@@ -2,18 +2,28 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
-import { Filter, ChevronDown, Shield, X } from 'lucide-react'
+import Image from 'next/image'
+import { Filter, ChevronDown, Shield, X, Upload, Search, Heart, Eye, Trash2, Loader2 } from 'lucide-react'
 import Navbar from '../components/ui/Navbar'
 import ChatBot from '../../components/Chatbot'
 
+interface Variant {
+  size: number
+  color: string
+  stock: number
+}
+
 interface Product {
-  id: number
+  id: string
   name: string
   price: number
   category: string
+  gender: 'male' | 'female'
   description: string
   imageUrl: string
-  variants: Array<{ size: number; color: string; stock: number }>
+  hoverImageUrl?: string
+  variants: Variant[]
+  blurDataUrl: string   // ✅ Added for blur placeholder
 }
 
 interface ProductsResponse {
@@ -26,6 +36,7 @@ export default function ProductsPage() {
   const [page, setPage] = useState(1)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
+  const [selectedGender, setSelectedGender] = useState<string>('all')
   const [productsData, setProductsData] = useState<ProductsResponse>({
     products: [],
     total: 0,
@@ -45,25 +56,53 @@ export default function ProductsPage() {
     name: '',
     price: '',
     category: 'casual',
+    gender: 'male',
     description: '',
     imageUrl: '',
+    hoverImageUrl: '',
     sizes: '',
     colors: '',
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // Image upload states (file + URL)
+  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const [imageUploadError, setImageUploadError] = useState<string | null>(null)
+
+  const [selectedHoverImageFile, setSelectedHoverImageFile] = useState<File | null>(null)
+  const [hoverImagePreview, setHoverImagePreview] = useState<string | null>(null)
+  const [uploadingHoverImage, setUploadingHoverImage] = useState(false)
+  const [hoverImageUploadError, setHoverImageUploadError] = useState<string | null>(null)
+
+  // Delete product state
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  // Hover state for image swap
+  const [hoveredProductId, setHoveredProductId] = useState<string | null>(null)
 
   const abortControllerRef = useRef<AbortController | null>(null)
   const categories = ['all', 'casual', 'formal', 'boots']
+  const genders = ['all', 'male', 'female']
 
-  // Reset page to 1 when category or search changes
+  // Check for existing admin session on mount
+  useEffect(() => {
+    const storedAuth = sessionStorage.getItem('admin_auth')
+    const storedPassword = sessionStorage.getItem('admin_password')
+    if (storedAuth === 'true' && storedPassword) {
+      setIsAdminAuthenticated(true)
+      setAdminMode(true)
+      setAdminPassword(storedPassword)
+    }
+  }, [])
+
+  // Reset page when filters change
   useEffect(() => {
     setPage(1)
-  }, [selectedCategory, searchTerm])
+  }, [selectedCategory, selectedGender, searchTerm])
 
   const fetchProducts = useCallback(async () => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-    }
+    if (abortControllerRef.current) abortControllerRef.current.abort()
     const abortController = new AbortController()
     abortControllerRef.current = abortController
 
@@ -75,6 +114,7 @@ export default function ProductsPage() {
         page: page.toString(),
         limit: '6',
         ...(selectedCategory !== 'all' && { category: selectedCategory }),
+        ...(selectedGender !== 'all' && { gender: selectedGender }),
         ...(searchTerm && { search: searchTerm }),
       })
 
@@ -85,61 +125,160 @@ export default function ProductsPage() {
       if (!response.ok) throw new Error('Failed to fetch products')
 
       const data = await response.json()
-      
-      // ✅ SAFETY: ensure products is always an array, and total/totalPages are numbers
       setProductsData({
         products: Array.isArray(data?.products) ? data.products : [],
         total: typeof data?.total === 'number' ? data.total : 0,
         totalPages: typeof data?.totalPages === 'number' ? data.totalPages : 0,
       })
-
-      if (data?.totalPages && page > data.totalPages) {
-        setPage(data.totalPages)
-      }
     } catch (err) {
       if (err instanceof Error && err.name !== 'AbortError') {
         setError(err.message)
-        // ✅ on error, also reset products to empty array to avoid length access issues
         setProductsData({ products: [], total: 0, totalPages: 0 })
       }
     } finally {
       setLoading(false)
     }
-  }, [page, selectedCategory, searchTerm])
+  }, [page, selectedCategory, selectedGender, searchTerm])
 
   useEffect(() => {
     fetchProducts()
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort()
-      }
-    }
+    return () => abortControllerRef.current?.abort()
   }, [fetchProducts])
 
-  // ✅ SAFE helper: prevents crash if variants is undefined or not an array
-  const getAvailableSizes = (variants: any[] = []) => {
-    if (!Array.isArray(variants) || variants.length === 0) {
-      return 'N/A'
-    }
-    return [...new Set(variants.map((v) => v.size))]
-      .sort((a, b) => a - b)
-      .join(', ')
+  const getAvailableSizes = (variants: Variant[] = []) => {
+    if (!variants.length) return 'N/A'
+    return [...new Set(variants.map((v) => v.size))].sort((a, b) => a - b).join(', ')
   }
 
-  // Admin authentication handler
+  // ---------- Admin handlers ----------
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault()
-    if (adminPassword === 'admin123') {
+    const trimmedPassword = adminPassword.trim()
+    if (trimmedPassword === 'admin123') {
       setIsAdminAuthenticated(true)
       setAdminError('')
       setAdminMode(true)
+      sessionStorage.setItem('admin_auth', 'true')
+      sessionStorage.setItem('admin_password', trimmedPassword)
+      window.dispatchEvent(new Event('adminAuthChanged'))
     } else {
       setAdminError('Wrong password')
     }
   }
 
+  const handleLogout = () => {
+    setIsAdminAuthenticated(false)
+    setAdminMode(false)
+    setAdminPassword('')
+    sessionStorage.removeItem('admin_auth')
+    sessionStorage.removeItem('admin_password')
+    window.dispatchEvent(new Event('adminAuthChanged'))
+  }
+
+  const deleteProduct = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to delete "${name}"? This cannot be undone.`)) return
+    setDeletingId(id)
+    try {
+      const password = sessionStorage.getItem('admin_password') || adminPassword
+      const response = await fetch(`/api/admin/products/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${password}` }
+      })
+      if (response.ok) {
+        setProductsData(prev => ({
+          ...prev,
+          products: prev.products.filter(p => p.id !== id),
+          total: prev.total - 1
+        }))
+        alert(`${name} deleted successfully`)
+      } else {
+        const errorData = await response.json()
+        alert(`Failed to delete: ${errorData.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      alert('Error deleting product')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  // Helper: upload a single file to /api/upload
+  const uploadFile = async (file: File): Promise<string> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await fetch('/api/upload', {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'Authorization': `Bearer ${sessionStorage.getItem('admin_password') || adminPassword}`
+      }
+    })
+    if (!res.ok) {
+      const errorData = await res.json()
+      throw new Error(errorData.error || 'Upload failed')
+    }
+    const data = await res.json()
+    return data.url
+  }
+
+  // Handle main image selection: upload and set URL
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setImageUploadError(null)
+    setUploadingImage(true)
+    setSelectedImageFile(file)
+    const localPreview = URL.createObjectURL(file)
+    setImagePreview(localPreview)
+
+    try {
+      const uploadedUrl = await uploadFile(file)
+      setNewProduct(prev => ({ ...prev, imageUrl: uploadedUrl }))
+      setImageUploadError(null)
+    } catch (err: any) {
+      console.error('Image upload failed:', err)
+      setImageUploadError(err.message)
+      setImagePreview(null)
+      setNewProduct(prev => ({ ...prev, imageUrl: '' }))
+    } finally {
+      setUploadingImage(false)
+    }
+  }
+
+  // Handle hover image selection
+  const handleHoverImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setHoverImageUploadError(null)
+    setUploadingHoverImage(true)
+    setSelectedHoverImageFile(file)
+    const localPreview = URL.createObjectURL(file)
+    setHoverImagePreview(localPreview)
+
+    try {
+      const uploadedUrl = await uploadFile(file)
+      setNewProduct(prev => ({ ...prev, hoverImageUrl: uploadedUrl }))
+      setHoverImageUploadError(null)
+    } catch (err: any) {
+      console.error('Hover image upload failed:', err)
+      setHoverImageUploadError(err.message)
+      setHoverImagePreview(null)
+      setNewProduct(prev => ({ ...prev, hoverImageUrl: '' }))
+    } finally {
+      setUploadingHoverImage(false)
+    }
+  }
+
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (!newProduct.imageUrl) {
+      alert('Please upload a main image for the product.')
+      return
+    }
+
     setIsSubmitting(true)
 
     const sizes = newProduct.sizes
@@ -158,12 +297,17 @@ export default function ProductsPage() {
       }
     }
 
+    const finalImageUrl = newProduct.imageUrl
+    const finalHoverImageUrl = newProduct.hoverImageUrl || null
+
     const productPayload = {
       name: newProduct.name,
       price: parseFloat(newProduct.price),
       category: newProduct.category,
+      gender: newProduct.gender,
       description: newProduct.description,
-      imageUrl: newProduct.imageUrl || '/images/placeholder.webp',
+      imageUrl: finalImageUrl,
+      hoverImageUrl: finalHoverImageUrl,
       variants,
     }
 
@@ -173,21 +317,27 @@ export default function ProductsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(productPayload),
       })
-
       if (!res.ok) {
         const errData = await res.json()
         throw new Error(errData.error || 'Failed to add product')
       }
-
       setNewProduct({
         name: '',
         price: '',
         category: 'casual',
+        gender: 'male',
         description: '',
         imageUrl: '',
+        hoverImageUrl: '',
         sizes: '',
         colors: '',
       })
+      setSelectedImageFile(null)
+      setImagePreview(null)
+      setSelectedHoverImageFile(null)
+      setHoverImagePreview(null)
+      setImageUploadError(null)
+      setHoverImageUploadError(null)
       setShowAddForm(false)
       fetchProducts()
     } catch (err: any) {
@@ -197,298 +347,499 @@ export default function ProductsPage() {
     }
   }
 
+  const getCategoryName = (cat: string) => {
+    const map: Record<string, string> = { casual: 'Casual', formal: 'Formal', boots: 'Boots' }
+    return map[cat] || cat
+  }
+
+  const clearAllFilters = () => {
+    setSearchTerm('')
+    setSelectedCategory('all')
+    setSelectedGender('all')
+  }
+
   return (
-    <main>
+    <main className="bg-white">
       <Navbar />
 
-      <div className="pt-24 pb-16">
-        <div className="container-custom">
-          {/* Page Header with Admin Toggle */}
-          <div className="flex justify-between items-center mb-8">
-            <div>
-              <h1 className="text-3xl md:text-4xl font-bold mb-2">Our Collection</h1>
-              <p className="text-gray-600">Handcrafted leather footwear for every occasion</p>
+      {/* HERO SECTION */}
+      <div className="pt-24 pb-12 bg-white">
+        <div className="container-custom text-center">
+          <span className="text-amber-600 text-sm tracking-widest font-serif uppercase">Our finest collection</span>
+          <h1 className="text-4xl md:text-5xl lg:text-6xl font-light tracking-tight mt-2">
+            Premium Leather Footwear
+          </h1>
+          <div className="w-16 h-px bg-amber-500 mx-auto my-4"></div>
+          <p className="text-gray-500 max-w-xl mx-auto">
+            Discover timeless craftsmanship and modern design, made for every step.
+          </p>
+        </div>
+      </div>
+
+      {/* Main content */}
+      <div className="container-custom pb-16">
+        {/* Admin button */}
+        <div className="flex justify-end mb-6">
+          <button
+            onClick={() => {
+              if (isAdminAuthenticated) handleLogout()
+              else setAdminMode(!adminMode)
+            }}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-full hover:border-amber-500 hover:text-amber-600 transition text-sm"
+          >
+            <Shield size={16} />
+            {isAdminAuthenticated ? 'Exit Admin' : (adminMode ? 'Exit Admin' : 'Admin')}
+          </button>
+        </div>
+
+        {/* Admin Authentication */}
+        {adminMode && !isAdminAuthenticated && (
+          <div className="mb-10 p-6 border border-amber-200 bg-amber-50/30 rounded-lg">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-light">Admin Access</h2>
+              <button onClick={() => setAdminMode(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleAdminLogin} className="space-y-4 max-w-sm">
+              <input
+                type="password"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                placeholder="Enter password"
+                className="w-full p-3 border border-gray-200 focus:border-amber-500 outline-none"
+              />
+              {adminError && <p className="text-red-500 text-sm">{adminError}</p>}
+              <button type="submit" className="bg-amber-600 text-white px-6 py-2 hover:bg-amber-700 transition">
+                Login
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* Admin Panel (Add Product form) WITH FILE UPLOADS */}
+        {adminMode && isAdminAuthenticated && (
+          <div className="mb-10 p-6 border border-green-200 bg-green-50/30 rounded-lg">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-light text-green-800">Admin Controls</h2>
+              <button onClick={handleLogout} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
             </div>
             <button
-              onClick={() => setAdminMode(!adminMode)}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition"
+              onClick={() => setShowAddForm(!showAddForm)}
+              className="bg-amber-600 text-white px-5 py-2 hover:bg-amber-700 transition"
             >
-              <Shield size={18} />
-              {adminMode ? 'Exit Admin' : 'Admin'}
+              {showAddForm ? 'Cancel' : '+ Add New Product'}
             </button>
-          </div>
 
-          {/* Admin Authentication Panel */}
-          {adminMode && !isAdminAuthenticated && (
-            <div className="mb-8 p-4 border-2 border-amber-200 rounded-lg bg-amber-50">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold">Admin Access</h2>
-                <button onClick={() => setAdminMode(false)} className="text-gray-500 hover:text-gray-700">
-                  <X size={20} />
-                </button>
-              </div>
-              <form onSubmit={handleAdminLogin} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Password</label>
-                  <input
-                    type="password"
-                    value={adminPassword}
-                    onChange={(e) => setAdminPassword(e.target.value)}
-                    className="w-full p-2 border rounded"
-                    placeholder="Enter admin password"
-                  />
+            {showAddForm && (
+              <form onSubmit={handleAddProduct} className="mt-6 space-y-5 bg-white p-6 border border-gray-100">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Product Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={newProduct.name}
+                      onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
+                      className="w-full p-2 border border-gray-200 focus:border-amber-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Price (FCFA) *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      value={newProduct.price}
+                      onChange={(e) => setNewProduct({ ...newProduct, price: e.target.value })}
+                      className="w-full p-2 border border-gray-200 focus:border-amber-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                    <select
+                      value={newProduct.category}
+                      onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })}
+                      className="w-full p-2 border border-gray-200 focus:border-amber-500 outline-none"
+                    >
+                      {categories.filter(c => c !== 'all').map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Gender *</label>
+                    <select
+                      required
+                      value={newProduct.gender}
+                      onChange={(e) => setNewProduct({ ...newProduct, gender: e.target.value as 'male' | 'female' })}
+                      className="w-full p-2 border border-gray-200 focus:border-amber-500 outline-none"
+                    >
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                    </select>
+                  </div>
+
+                  {/* MAIN IMAGE UPLOAD */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Main Image *</label>
+                    <div className="flex items-center gap-3">
+                      <label className={`flex items-center gap-2 px-4 py-2 border border-gray-200 hover:border-amber-500 cursor-pointer transition ${uploadingImage ? 'opacity-50 pointer-events-none' : ''}`}>
+                        {uploadingImage ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                        {uploadingImage ? 'Uploading...' : 'Choose file'}
+                        <input type="file" accept="image/*" onChange={handleImageSelect} className="hidden" />
+                      </label>
+                      {imagePreview && (
+                        <div className="relative w-10 h-10 overflow-hidden">
+                          <Image src={imagePreview} alt="Preview" fill className="object-cover" />
+                        </div>
+                      )}
+                    </div>
+                    {imageUploadError && (
+                      <p className="text-red-500 text-xs mt-1">{imageUploadError}</p>
+                    )}
+                    {uploadingImage && <p className="text-gray-400 text-xs mt-1">Uploading image, please wait...</p>}
+                  </div>
+
+                  {/* HOVER IMAGE UPLOAD (optional) */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Hover Image (optional)</label>
+                    <div className="flex items-center gap-3">
+                      <label className={`flex items-center gap-2 px-4 py-2 border border-gray-200 hover:border-amber-500 cursor-pointer transition ${uploadingHoverImage ? 'opacity-50 pointer-events-none' : ''}`}>
+                        {uploadingHoverImage ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                        {uploadingHoverImage ? 'Uploading...' : 'Choose file'}
+                        <input type="file" accept="image/*" onChange={handleHoverImageSelect} className="hidden" />
+                      </label>
+                      {hoverImagePreview && (
+                        <div className="relative w-10 h-10 overflow-hidden">
+                          <Image src={hoverImagePreview} alt="Hover Preview" fill className="object-cover" />
+                        </div>
+                      )}
+                    </div>
+                    {hoverImageUploadError && (
+                      <p className="text-red-500 text-xs mt-1">{hoverImageUploadError}</p>
+                    )}
+                    <p className="text-xs text-gray-400 mt-1">Will swap with main image on hover</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Sizes (comma)</label>
+                    <input
+                      type="text"
+                      value={newProduct.sizes}
+                      onChange={(e) => setNewProduct({ ...newProduct, sizes: e.target.value })}
+                      placeholder="38,39,40,41"
+                      className="w-full p-2 border border-gray-200 focus:border-amber-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Colors (comma)</label>
+                    <input
+                      type="text"
+                      value={newProduct.colors}
+                      onChange={(e) => setNewProduct({ ...newProduct, colors: e.target.value })}
+                      placeholder="Black,Brown,Tan"
+                      className="w-full p-2 border border-gray-200 focus:border-amber-500 outline-none"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                    <textarea
+                      rows={3}
+                      value={newProduct.description}
+                      onChange={(e) => setNewProduct({ ...newProduct, description: e.target.value })}
+                      className="w-full p-2 border border-gray-200 focus:border-amber-500 outline-none"
+                    />
+                  </div>
                 </div>
-                {adminError && <p className="text-red-500 text-sm">{adminError}</p>}
-                <button type="submit" className="bg-amber-600 text-white px-4 py-2 rounded hover:bg-amber-700">
-                  Login
+                <button
+                  type="submit"
+                  disabled={isSubmitting || uploadingImage || !!(selectedImageFile && !newProduct.imageUrl)}
+                  className="bg-gray-900 text-white px-6 py-2 hover:bg-gray-800 transition disabled:opacity-50"
+                >
+                  {isSubmitting ? 'Adding...' : 'Add Product'}
                 </button>
               </form>
+            )}
+          </div>
+        )}
+
+        {/* FILTER BAR */}
+        <div className="mb-10">
+          {/* Desktop horizontal layout */}
+          <div className="hidden md:flex items-center gap-6 w-full">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+              <input
+                type="text"
+                placeholder="Search by name or description..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-full focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none bg-white"
+              />
             </div>
-          )}
-
-          {/* Admin Panel (when authenticated) */}
-          {adminMode && isAdminAuthenticated && (
-            <div className="mb-8 p-4 border-2 border-green-200 rounded-lg bg-green-50">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold text-green-800">Admin Controls</h2>
-                <button
-                  onClick={() => {
-                    setIsAdminAuthenticated(false)
-                    setAdminMode(false)
-                    setAdminPassword('')
-                  }}
-                  className="text-gray-500 hover:text-gray-700"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              <div className="space-y-4">
-                <button
-                  onClick={() => setShowAddForm(!showAddForm)}
-                  className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
-                >
-                  {showAddForm ? 'Cancel' : '+ Add New Product'}
-                </button>
-
-                {showAddForm && (
-                  <form onSubmit={handleAddProduct} className="space-y-4 mt-4 p-4 bg-white rounded border">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium">Product Name *</label>
-                        <input
-                          type="text"
-                          required
-                          value={newProduct.name}
-                          onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
-                          className="w-full p-2 border rounded"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium">Price (FCFA) *</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          required
-                          value={newProduct.price}
-                          onChange={(e) => setNewProduct({ ...newProduct, price: e.target.value })}
-                          className="w-full p-2 border rounded"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium">Category</label>
-                        <select
-                          value={newProduct.category}
-                          onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })}
-                          className="w-full p-2 border rounded"
-                        >
-                          {categories.filter(c => c !== 'all').map(cat => (
-                            <option key={cat} value={cat}>{cat}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium">Image URL</label>
-                        <input
-                          type="url"
-                          value={newProduct.imageUrl}
-                          onChange={(e) => setNewProduct({ ...newProduct, imageUrl: e.target.value })}
-                          className="w-full p-2 border rounded"
-                          placeholder="https://example.com/shoe.jpg"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium">Sizes (comma-separated)</label>
-                        <input
-                          type="text"
-                          value={newProduct.sizes}
-                          onChange={(e) => setNewProduct({ ...newProduct, sizes: e.target.value })}
-                          placeholder="38,39,40,41"
-                          className="w-full p-2 border rounded"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium">Colors (comma-separated)</label>
-                        <input
-                          type="text"
-                          value={newProduct.colors}
-                          onChange={(e) => setNewProduct({ ...newProduct, colors: e.target.value })}
-                          placeholder="Black,Brown,Tan"
-                          className="w-full p-2 border rounded"
-                        />
-                      </div>
-                      <div className="md:col-span-2">
-                        <label className="block text-sm font-medium">Description</label>
-                        <textarea
-                          rows={3}
-                          value={newProduct.description}
-                          onChange={(e) => setNewProduct({ ...newProduct, description: e.target.value })}
-                          className="w-full p-2 border rounded"
-                        />
-                      </div>
-                    </div>
-                    <button
-                      type="submit"
-                      disabled={isSubmitting}
-                      className="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700 disabled:opacity-50"
-                    >
-                      {isSubmitting ? 'Adding...' : 'Add Product'}
-                    </button>
-                  </form>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Search Input */}
-          <input
-            type="text"
-            placeholder="Search shoes..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full p-2 border rounded-lg mb-4"
-          />
-
-          {/* Mobile Filter Button */}
-          <button
-            className="md:hidden w-full bg-gray-100 py-2 rounded-lg mb-4 flex items-center justify-center gap-2"
-            onClick={() => setShowFilters(!showFilters)}
-          >
-            <Filter size={18} />
-            Filter by Category
-            <ChevronDown size={18} />
-          </button>
-
-          {/* Categories */}
-          <div className={`${showFilters ? 'block' : 'hidden'} md:block mb-8`}>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500 mr-1">Category:</span>
               {categories.map((category) => (
                 <button
                   key={category}
                   onClick={() => setSelectedCategory(category)}
-                  className={`px-4 py-2 rounded-full capitalize transition ${
+                  className={`px-3 py-1.5 text-sm capitalize rounded-full transition ${
                     selectedCategory === category
                       ? 'bg-amber-600 text-white'
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
-                  {category}
+                  {category === 'all' ? 'All' : getCategoryName(category)}
                 </button>
               ))}
             </div>
-          </div>
-
-          {/* Error Message */}
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">
-              {error}. Please try again later.
-            </div>
-          )}
-
-          {/* Products Grid */}
-          {loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <div key={i} className="bg-gray-200 animate-pulse h-96 rounded-lg"></div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500 mr-1">For:</span>
+              {genders.map((gender) => (
+                <button
+                  key={gender}
+                  onClick={() => setSelectedGender(gender)}
+                  className={`px-3 py-1.5 text-sm capitalize rounded-full transition ${
+                    selectedGender === gender
+                      ? 'bg-amber-100 text-amber-700 border border-amber-300'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {gender === 'all' ? 'All' : gender === 'male' ? 'Men' : 'Women'}
+                </button>
               ))}
             </div>
-          ) : !productsData.products?.length ? (
-            <div className="text-center py-12">
-              <p className="text-gray-500">No products found.</p>
+            {(selectedCategory !== 'all' || selectedGender !== 'all' || searchTerm) && (
+              <button onClick={clearAllFilters} className="text-sm text-red-500 hover:text-red-700 whitespace-nowrap">
+                Clear all
+              </button>
+            )}
+          </div>
+
+          {/* Mobile layout */}
+          <div className="md:hidden">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+                <input
+                  type="text"
+                  placeholder="Search..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-full text-sm"
+                />
+              </div>
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className="px-4 py-2 border border-gray-200 rounded-full text-sm flex items-center gap-1"
+              >
+                <Filter size={14} />
+                Filter
+                <ChevronDown size={14} className={`transition-transform ${showFilters ? 'rotate-180' : ''}`} />
+              </button>
             </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {productsData.products.map((product) => (
-                  <div key={product.id} className="product-card group">
-                    <Link href={`/products/${product.id}`}>
-                      <div className="relative h-80 bg-gray-100 flex items-center justify-center overflow-hidden rounded-t-lg">
-                        <img
-                          src={product.imageUrl}
-                          alt={product.name}
-                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+            {showFilters && (
+              <div className="space-y-4 mt-2">
+                <div>
+                  <div className="text-sm font-medium text-gray-700 mb-2">Category</div>
+                  <div className="flex flex-wrap gap-2">
+                    {categories.map(cat => (
+                      <button
+                        key={cat}
+                        onClick={() => setSelectedCategory(cat)}
+                        className={`px-3 py-1.5 text-sm capitalize rounded-full ${
+                          selectedCategory === cat ? 'bg-amber-600 text-white' : 'bg-gray-100'
+                        }`}
+                      >
+                        {cat === 'all' ? 'All' : getCategoryName(cat)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-gray-700 mb-2">Gender</div>
+                  <div className="flex flex-wrap gap-2">
+                    {genders.map(g => (
+                      <button
+                        key={g}
+                        onClick={() => setSelectedGender(g)}
+                        className={`px-3 py-1.5 text-sm capitalize rounded-full ${
+                          selectedGender === g
+                            ? 'bg-amber-100 text-amber-700 border border-amber-300'
+                            : 'bg-gray-100'
+                        }`}
+                      >
+                        {g === 'all' ? 'All' : g === 'male' ? 'Men' : 'Women'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {(selectedCategory !== 'all' || selectedGender !== 'all' || searchTerm) && (
+                  <button onClick={clearAllFilters} className="text-sm text-red-500 underline">
+                    Clear all filters
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* PRODUCTS GRID */}
+        <style jsx>{`
+          .products-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            column-gap: 30px;
+            row-gap: 70px;
+            max-width: 1200px;
+            margin: 0 auto;
+          }
+          @media (max-width: 999.98px) {
+            .products-grid {
+              grid-template-columns: repeat(2, 1fr);
+              column-gap: 30px;
+              row-gap: 70px;
+            }
+          }
+        `}</style>
+
+        {loading ? (
+          <div className="products-grid">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="bg-gray-100 animate-pulse rounded-lg" style={{ aspectRatio: '1 / 1' }}></div>
+            ))}
+          </div>
+        ) : !productsData.products?.length ? (
+          <div className="text-center py-16 bg-gray-50 rounded-lg">
+            <p className="text-gray-400">No products match your criteria.</p>
+          </div>
+        ) : (
+          <>
+            <div className="products-grid">
+              {productsData.products.map((product) => (
+                <div
+                  key={product.id}
+                  className="group bg-white border border-gray-100 rounded-lg hover:shadow-md transition-all duration-300 overflow-hidden"
+                  onMouseEnter={() => setHoveredProductId(product.id)}
+                  onMouseLeave={() => setHoveredProductId(null)}
+                >
+                  <Link href={`/products/${product.id}`}>
+                    <div className="relative aspect-square bg-gray-100 overflow-hidden">
+                      {/* Main image with blur placeholder */}
+                      <Image
+                        src={product.imageUrl}
+                        alt={product.name}
+                        fill
+                        className={`object-cover transition-opacity duration-300 ${
+                          hoveredProductId === product.id && product.hoverImageUrl ? 'opacity-0' : 'opacity-100'
+                        }`}
+                        placeholder="blur"
+                        blurDataURL={product.blurDataUrl}
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = '/images/placeholder.webp'
+                        }}
+                      />
+                      {/* Hover image with blur placeholder */}
+                      {product.hoverImageUrl && (
+                        <Image
+                          src={product.hoverImageUrl}
+                          alt={`${product.name} alternate`}
+                          fill
+                          className={`object-cover transition-opacity duration-300 ${
+                            hoveredProductId === product.id ? 'opacity-100' : 'opacity-0'
+                          }`}
+                          placeholder="blur"
+                          blurDataURL={product.blurDataUrl}
                           onError={(e) => {
-                            e.currentTarget.src = '/images/placeholder.webp'
-                            e.currentTarget.onerror = null
+                            (e.target as HTMLImageElement).src = '/images/placeholder.webp'
                           }}
                         />
-                      </div>
-                      <div className="p-4">
-                        <h3 className="font-semibold text-lg mb-1 group-hover:text-amber-600 transition">
-                          {product.name}
-                        </h3>
-                        <p className="text-amber-600 font-bold text-xl mb-2">
-                          {product.price.toLocaleString()} FCFA
-                        </p>
-                        <p className="text-gray-600 text-sm mb-3 line-clamp-2">
-                          {product.description}
-                        </p>
-                        <div className="text-sm text-gray-500">
-                          Sizes: {getAvailableSizes(product.variants)}
-                        </div>
-                      </div>
-                    </Link>
-                    <div className="px-4 pb-4">
-                      <button
-                        onClick={() => {
-                          const event = new CustomEvent('chatbot:addProduct', {
-                            detail: { productName: product.name },
-                          })
-                          window.dispatchEvent(event)
-                        }}
-                        className="w-full bg-amber-600 text-white py-2 rounded-lg hover:bg-amber-700 transition"
-                      >
-                        💬 Chat to Buy
+                      )}
+                      {/* Heart icon */}
+                      <button className="absolute top-2 right-2 bg-white/80 p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition">
+                        <Heart size={16} className="text-gray-600 hover:text-red-500" />
                       </button>
+                      {/* Quick view overlay */}
+                      <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                        <span className="bg-white text-gray-800 px-3 py-1.5 text-xs font-medium flex items-center gap-1">
+                          <Eye size={14} /> Quick View
+                        </span>
+                      </div>
                     </div>
+                    <div className="p-3 md:p-5 text-center">
+                      <div className="flex justify-center gap-2 mb-1">
+                        <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">
+                          {getCategoryName(product.category)}
+                        </span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${
+                          product.gender === 'male' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'
+                        }`}>
+                          {product.gender === 'male' ? '👞 Men' : '👠 Women'}
+                        </span>
+                      </div>
+                      <h3 className="font-medium text-gray-800 group-hover:text-amber-600 transition text-sm md:text-base">
+                        {product.name}
+                      </h3>
+                      <p className="text-amber-600 font-semibold mt-1 md:mt-2 text-sm md:text-base">
+                        {product.price.toLocaleString()} FCFA
+                      </p>
+                      <p className="text-gray-500 text-xs mt-1 line-clamp-2 hidden md:block">{product.description}</p>
+                      <div className="mt-1 md:mt-2 text-xs text-gray-400">
+                        Sizes: {getAvailableSizes(product.variants)}
+                      </div>
+                    </div>
+                  </Link>
+                  <div className="px-3 pb-3 md:px-5 md:pb-5 pt-0 space-y-2">
+                    <button
+                      onClick={() => {
+                        window.dispatchEvent(new CustomEvent('chatbot:addProduct', { detail: { productName: product.name } }))
+                      }}
+                      className="w-full border border-amber-600 text-amber-600 py-1.5 md:py-2 text-sm rounded-md hover:bg-amber-600 hover:text-white transition"
+                    >
+                      💬 Chat to Buy
+                    </button>
+                    {isAdminAuthenticated && (
+                      <button
+                        onClick={() => deleteProduct(product.id, product.name)}
+                        disabled={deletingId === product.id}
+                        className="w-full bg-red-50 text-red-600 py-1.5 md:py-2 text-sm rounded-md hover:bg-red-100 transition disabled:opacity-50 flex items-center justify-center gap-1"
+                      >
+                        <Trash2 size={14} />
+                        {deletingId === product.id ? 'Deleting...' : 'Delete (Admin)'}
+                      </button>
+                    )}
                   </div>
-                ))}
-              </div>
-
-              {/* Pagination Controls - only show if totalPages > 1 AND products exist */}
-              {productsData.totalPages > 1 && (
-                <div className="flex justify-center gap-2 mt-8">
-                  <button
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page === 1 || loading}
-                    className="px-4 py-2 border rounded disabled:opacity-50 hover:bg-gray-50 transition"
-                  >
-                    Previous
-                  </button>
-                  <span className="px-4 py-2">
-                    Page {page} of {productsData.totalPages}
-                  </span>
-                  <button
-                    onClick={() => setPage((p) => Math.min(productsData.totalPages, p + 1))}
-                    disabled={page === productsData.totalPages || loading}
-                    className="px-4 py-2 border rounded disabled:opacity-50 hover:bg-gray-50 transition"
-                  >
-                    Next
-                  </button>
                 </div>
-              )}
-            </>
-          )}
-        </div>
+              ))}
+            </div>
+
+            {/* Pagination */}
+            {productsData.totalPages > 1 && (
+              <div className="flex justify-center gap-3 mt-12">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1 || loading}
+                  className="px-5 py-2 border border-gray-200 rounded-md hover:border-amber-500 disabled:opacity-50 transition"
+                >
+                  Previous
+                </button>
+                <span className="px-4 py-2 text-gray-600">
+                  Page {page} of {productsData.totalPages}
+                </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(productsData.totalPages, p + 1))}
+                  disabled={page === productsData.totalPages || loading}
+                  className="px-5 py-2 border border-gray-200 rounded-md hover:border-amber-500 disabled:opacity-50 transition"
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       <ChatBot />
