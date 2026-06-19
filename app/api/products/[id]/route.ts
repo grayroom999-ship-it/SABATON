@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
+// Static base64 placeholder (same as used in /api/products)
+function getBlurDataURL() {
+  return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -19,7 +24,7 @@ export async function GET(
         description: true,
         material: true,
         imageUrl: true,
-        hoverImageUrl: true,   // 👈 MUST be included
+        hoverImageUrl: true,
         variants: true,
       },
     })
@@ -28,7 +33,13 @@ export async function GET(
       return NextResponse.json({ error: 'Product not found' }, { status: 404 })
     }
 
-    return NextResponse.json(product)
+    // ✅ Add blurDataUrl to the response
+    const productWithBlur = {
+      ...product,
+      blurDataUrl: getBlurDataURL(),
+    }
+
+    return NextResponse.json(productWithBlur)
   } catch (error) {
     console.error('Error fetching product:', error)
     return NextResponse.json({ error: 'Failed to fetch product' }, { status: 500 })

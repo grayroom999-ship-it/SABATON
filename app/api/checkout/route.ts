@@ -3,27 +3,31 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 
-// Ensure this file is treated as a module (adds a dummy export)
-export const runtime = 'nodejs'; // optional, forces Node.js runtime
+export const runtime = 'nodejs';
 
 const checkoutSchema = z.object({
   sessionId: z.string().min(1),
   customerId: z.string().optional(),
   paymentMethod: z.enum(['mtn_momo', 'orange_money']).optional(),
+  phoneNumber: z.string().optional(),
+  deliveryAddress: z.string().optional(),
 });
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    console.log('[checkout] Request body:', body);
+
     const validation = checkoutSchema.safeParse(body);
     if (!validation.success) {
+      console.error('[checkout] Validation error:', validation.error);
       return NextResponse.json(
         { error: 'Invalid request', details: validation.error },
         { status: 400 }
       );
     }
 
-    const { sessionId, customerId } = validation.data;
+    const { sessionId, customerId, paymentMethod, phoneNumber, deliveryAddress } = validation.data;
 
     const result = await prisma.$transaction(async (tx) => {
       const cart = await tx.cart.findUnique({
@@ -56,31 +60,69 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      // ─── Create order with phone & address ───────────────────
       const order = await tx.order.create({
         data: {
           customerId: customerId || null,
           total,
           status: 'pending',
+          phone: phoneNumber || null,        // <-- store phone
+          address: deliveryAddress || null,  // <-- store address
           items: { create: orderItemsData },
         },
       });
 
       await tx.cart.delete({ where: { id: cart.id } });
 
-      return { order, total };
+      return { order, total, cartItems: cart.items };
     });
+
+    // ─── Send email (pass phone & address) ────────────────────
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const { order, cartItems, total } = result;
+
+    try {
+      const emailResponse = await fetch(`${baseUrl}/api/send-order-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          order: {
+            orderNumber: order.id,
+            customerName: customerId ? 'Customer' : 'Guest',
+            customerPhone: phoneNumber || 'N/A',
+            deliveryAddress: deliveryAddress || 'N/A',
+            items: cartItems.map((item: any) => ({
+              name: item.product.name,
+              size: item.variant?.size || 'N/A',
+              quantity: item.quantity,
+              price: item.variant?.price ?? item.product.price,
+            })),
+            totalAmount: total,
+          },
+        }),
+      });
+
+      if (!emailResponse.ok) {
+        const errorText = await emailResponse.text();
+        console.error('[checkout] Email notification failed:', errorText);
+      } else {
+        console.log('[checkout] Email notification sent successfully');
+      }
+    } catch (emailError) {
+      console.error('[checkout] Failed to send email notification:', emailError);
+    }
 
     return NextResponse.json({
       success: true,
-      orderId: result.order.id,
-      total: result.total,
+      orderId: order.id,
+      total: total,
       message: 'Order created successfully',
     });
-  } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: 'Checkout failed' }, { status: 500 });
+  } catch (error: any) {
+    console.error('[checkout] Error:', error.message || error);
+    return NextResponse.json(
+      { error: error.message || 'Checkout failed' },
+      { status: 500 }
+    );
   }
 }
-
-// Optional: ensure module status (TypeScript likes this sometimes)
-export {}; 

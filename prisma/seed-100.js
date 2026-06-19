@@ -15,12 +15,12 @@ const prisma = new PrismaClient({ adapter });
 async function main() {
   console.log('🌱 Starting database seed...');
 
-  // 1. Clear existing products (cascade deletes variants, relations)
+  // 1. Clear existing products
   console.log('🗑️  Clearing existing products...');
   await prisma.product.deleteMany({});
   console.log('✅ Cleared all products.');
 
-  // 2. Create shoe categories (casual, formal, boots, all)
+  // 2. Create shoe categories
   const categoryNames = ['casual', 'formal', 'boots', 'all'];
   const categories = {};
   for (const name of categoryNames) {
@@ -37,7 +37,6 @@ async function main() {
     fs.readFileSync(path.join(__dirname, '../products-data.json'), 'utf-8')
   );
 
-  // Helper to map old category strings to shoeCategories array
   function mapCategoryToShoeCategories(category) {
     if (!category) return ['all'];
     const lower = category.toLowerCase();
@@ -47,16 +46,21 @@ async function main() {
     return ['all'];
   }
 
-  // 4. Seed shoes
+  // 4. Seed shoes – skip the Brown Casual Loafer Boot
   for (const p of productsData) {
     const productType = p.productType || 'shoe';
     if (productType !== 'shoe') continue;
+
+    // 👇 Skip the Brown Casual Loafer Boot by name or any condition
+    if (p.name && p.name.toLowerCase().includes('brown casual loafer boot')) {
+      console.log(`⏭️ Skipping "${p.name}" as requested.`);
+      continue;
+    }
 
     const gender = p.gender || 'mens';
     const material = p.material || 'leather';
     const shoeCategoriesRaw = p.shoeCategories || mapCategoryToShoeCategories(p.category);
 
-    // ✅ No blurDataUrl field here
     const product = await prisma.product.create({
       data: {
         name: p.name,
@@ -69,7 +73,6 @@ async function main() {
       },
     });
 
-    // Link shoe to categories
     for (const catName of shoeCategoriesRaw) {
       const shoeCategory = categories[catName];
       if (shoeCategory) {
@@ -84,7 +87,6 @@ async function main() {
       }
     }
 
-    // Create variants
     if (p.variants && p.variants.length) {
       for (const v of p.variants) {
         const sku = v.sku || `${product.id}-${v.size}-${v.color}`.replace(/\s/g, '');
@@ -103,7 +105,7 @@ async function main() {
     console.log(`✅ Added shoe: ${product.name} (gender: ${gender}, categories: ${shoeCategoriesRaw.join(', ')})`);
   }
 
-  // 5. Seed accessories (7 total)
+  // 5. Seed accessories (unchanged – 7 items)
   const accessories = [
     {
       name: 'Premium Cedar Wood Shoe Horn',
@@ -111,7 +113,7 @@ async function main() {
       accessoryType: 'horn',
       fitsCategories: ['all'],
       crossSellScore: 95,
-      gender: null,
+      gender: 'unisex',
       imageUrl: '/images/accessories/shoe-horn.jpg',
     },
     {
@@ -120,7 +122,7 @@ async function main() {
       accessoryType: 'socks',
       fitsCategories: ['formal'],
       crossSellScore: 80,
-      gender: 'mens',
+      gender: 'unisex',
       imageUrl: '/images/accessories/dress-socks.jpg',
     },
     {
@@ -129,8 +131,8 @@ async function main() {
       accessoryType: 'laces',
       fitsCategories: ['casual', 'boots'],
       crossSellScore: 70,
-      gender: null,
-      imageUrl: '/images/accessories/shoelaces.jpg',
+      gender: 'unisex',
+      imageUrl: '/images/accessories/waxed-shoe-laces.jpg',
     },
     {
       name: 'Leather Conditioning Cream',
@@ -138,41 +140,39 @@ async function main() {
       accessoryType: 'cleaner',
       fitsCategories: ['all'],
       crossSellScore: 60,
-      gender: null,
+      gender: 'unisex',
       imageUrl: '/images/accessories/leather-cream.jpg',
     },
     {
       name: 'Horsehair Shoe Brush',
       price: 3900,
-      accessoryType: 'brush',
+      accessoryType: 'cleaner',
       fitsCategories: ['all'],
       crossSellScore: 85,
-      gender: null,
+      gender: 'unisex',
       imageUrl: '/images/accessories/horsehair-brush.jpg',
     },
     {
-      name: 'Waterproof Nano Spray',
+      name: 'Waterproof Nano cream',
       price: 5900,
-      accessoryType: 'protector',
+      accessoryType: 'cleaner',
       fitsCategories: ['casual', 'boots', 'formal'],
       crossSellScore: 90,
-      gender: null,
-      imageUrl: '/images/accessories/waterproof-spray.jpg',
+      gender: 'unisex',
+      imageUrl: '/images/accessories/waterproof-cream.jpg',
     },
     {
       name: 'Cedar Shoe Trees (Pair)',
       price: 8900,
-      accessoryType: 'trees',
+      accessoryType: 'horn',
       fitsCategories: ['all'],
       crossSellScore: 75,
-      gender: null,
+      gender: 'unisex',
       imageUrl: '/images/accessories/shoe-trees.jpg',
     },
   ];
 
   for (const acc of accessories) {
-    const slug = acc.name.toLowerCase().replace(/ /g, '-');
-    // ✅ No blurDataUrl here either
     const product = await prisma.product.create({
       data: {
         name: acc.name,
@@ -199,7 +199,7 @@ async function main() {
         console.warn(`⚠️ Unknown shoe category: ${catName} for accessory ${acc.name}`);
       }
     }
-    console.log(`✅ Added accessory: ${product.name} (fits: ${acc.fitsCategories.join(', ')}, gender: ${acc.gender || 'unisex'})`);
+    console.log(`✅ Added accessory: ${product.name} (fits: ${acc.fitsCategories.join(', ')}, gender: ${acc.gender})`);
   }
 
   console.log('🌱 Seeding completed successfully!');

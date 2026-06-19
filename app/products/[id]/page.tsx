@@ -24,9 +24,14 @@ interface Product {
   description: string
   material: string
   imageUrl: string
-  hoverImageUrl?: string   // 👈 NEW: optional second image
+  hoverImageUrl?: string
   variants: Variant[]
+  blurDataUrl?: string
+  gender: 'male' | 'female' | 'unisex'
 }
+
+const DEFAULT_BLUR =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
 
 export default function ProductDetailPage() {
   const params = useParams()
@@ -36,16 +41,12 @@ export default function ProductDetailPage() {
   const [quantity, setQuantity] = useState(1)
   const [loading, setLoading] = useState(true)
 
-  // ---- Helper: normalise size to string ----
   const normalizeSize = (size: unknown): string => String(size)
-
-  // ---- Helper: normalise stock to number ----
   const getStockNumber = (stock: unknown): number => {
     const num = Number(stock)
     return isNaN(num) ? 0 : num
   }
 
-  // ---- Memoized derived data ----
   const availableSizes = useMemo(() => {
     if (!product?.variants?.length) return []
     const sizes = product.variants.map(v => normalizeSize(v.size))
@@ -67,7 +68,6 @@ export default function ProductDetailPage() {
     return variant ? getStockNumber(variant.stock) : 0
   }, [product, selectedSize, selectedColor])
 
-  // ---- Auto‑select first in‑stock variant after product loads ----
   useEffect(() => {
     if (!product?.variants?.length) return
 
@@ -81,7 +81,6 @@ export default function ProductDetailPage() {
     }
   }, [product])
 
-  // ---- Reset color when size changes ----
   useEffect(() => {
     if (availableColors.length > 0 && !availableColors.includes(selectedColor)) {
       setSelectedColor(availableColors[0])
@@ -90,7 +89,6 @@ export default function ProductDetailPage() {
     }
   }, [selectedSize, availableColors, selectedColor])
 
-  // ---- Fetch product ----
   const fetchProduct = async () => {
     try {
       const response = await fetch(`/api/products/${params.id}`)
@@ -102,7 +100,7 @@ export default function ProductDetailPage() {
 
       const data = await response.json()
       const variants = Array.isArray(data.variants) ? data.variants : []
-      setProduct({ ...data, variants })
+      setProduct({ ...data, variants, blurDataUrl: data.blurDataUrl || DEFAULT_BLUR })
       setQuantity(1)
     } catch (error) {
       console.error('Error fetching product:', error)
@@ -147,7 +145,6 @@ export default function ProductDetailPage() {
     toast.success('Opening chatbot to add item to cart!')
   }
 
-  // ---- Loading & error states ----
   if (loading) {
     return (
       <main>
@@ -177,6 +174,15 @@ export default function ProductDetailPage() {
     )
   }
 
+  const getGenderDisplay = () => {
+    if (product.gender === 'male') return { label: '👞 Men', style: 'bg-blue-100 text-blue-700' }
+    if (product.gender === 'female') return { label: '👠 Women', style: 'bg-pink-100 text-pink-700' }
+    if (product.gender === 'unisex') return { label: '🧑‍🤝‍🧑 Unisex', style: 'bg-gray-100 text-gray-600' }
+    return { label: '', style: 'bg-gray-100 text-gray-600' }
+  }
+
+  const genderDisplay = getGenderDisplay()
+
   return (
     <main>
       <Navbar />
@@ -188,40 +194,48 @@ export default function ProductDetailPage() {
           </Link>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-            {/* Main Image + Alternate Image (if exists) */}
             <div>
-              <div className="bg-gray-100 rounded-lg h-96 lg:h-125 flex items-center justify-center overflow-hidden">
+              <div className="bg-gray-100 rounded-lg h-96 lg:h-125 flex items-center justify-center overflow-hidden relative">
                 {product.imageUrl ? (
                   <Image
                     src={product.imageUrl}
                     alt={product.name}
-                    width={600}
-                    height={600}
-                    className="object-cover w-full h-full"
+                    fill
+                    className="object-cover"
                     priority
+                    placeholder="blur"
+                    blurDataURL={product.blurDataUrl || DEFAULT_BLUR}
+                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = '/images/placeholder.webp'
+                    }}
                   />
                 ) : (
                   <span className="text-9xl">👞</span>
                 )}
               </div>
-              {/* 👇 NEW: Show hover/alternate image if available */}
+
               {product.hoverImageUrl && (
                 <div className="mt-4">
                   <p className="text-sm text-gray-500 mb-1">Alternate view</p>
-                  <div className="bg-gray-100 rounded-lg h-48 flex items-center justify-center overflow-hidden">
+                  <div className="bg-gray-100 rounded-lg h-48 flex items-center justify-center overflow-hidden relative">
                     <Image
                       src={product.hoverImageUrl}
                       alt={`${product.name} alternate`}
-                      width={600}
-                      height={300}
-                      className="object-cover w-full h-full"
+                      fill
+                      className="object-cover"
+                      placeholder="blur"
+                      blurDataURL={product.blurDataUrl || DEFAULT_BLUR}
+                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = '/images/placeholder.webp'
+                      }}
                     />
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Product Info (unchanged) */}
             <div>
               <h1 className="text-3xl font-bold mb-2">{product.name}</h1>
               <p className="text-3xl font-bold text-amber-600 mb-4">
@@ -236,7 +250,13 @@ export default function ProductDetailPage() {
                   <p className="text-gray-600">{product.material}</p>
                 </div>
 
-                {/* Size Selection */}
+                <div className="mb-4 flex items-center gap-2">
+                  <span className="font-semibold">For:</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${genderDisplay.style}`}>
+                    {genderDisplay.label}
+                  </span>
+                </div>
+
                 <div className="mb-4">
                   <h3 className="font-semibold mb-2">Select Size:</h3>
                   <div className="flex flex-wrap gap-2">
@@ -256,7 +276,6 @@ export default function ProductDetailPage() {
                   </div>
                 </div>
 
-                {/* Color Selection */}
                 {availableColors.length > 0 && (
                   <div className="mb-4">
                     <h3 className="font-semibold mb-2">Select Color:</h3>
@@ -278,7 +297,6 @@ export default function ProductDetailPage() {
                   </div>
                 )}
 
-                {/* Quantity */}
                 <div className="mb-4">
                   <h3 className="font-semibold mb-2">Quantity:</h3>
                   <div className="flex items-center gap-3">
@@ -304,7 +322,6 @@ export default function ProductDetailPage() {
                 </div>
               </div>
 
-              {/* Add to Cart Button */}
               <button
                 onClick={addToCartViaChat}
                 disabled={currentStock === 0}
@@ -313,7 +330,6 @@ export default function ProductDetailPage() {
                 {currentStock === 0 ? 'Out of Stock' : '💬 Add to Cart via Chat'}
               </button>
 
-              {/* Features / Benefits */}
               <div className="space-y-3">
                 <div className="flex items-center gap-3 text-gray-600">
                   <Truck size={20} />

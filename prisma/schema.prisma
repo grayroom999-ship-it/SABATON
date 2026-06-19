@@ -26,9 +26,9 @@ model Product {
   description String?
   price       Float
   imageUrl    String?
-  hoverImageUrl  String?          // ✅ already present
+  hoverImageUrl  String?
   category    String?             // "shoe" or "accessory"
-  gender      String              // ✅ stays as String (no enum)
+  gender      String              // stays as String (no enum)
   material    String?
   accessoryType   AccessoryType?
   crossSellScore  Int            @default(0)
@@ -61,13 +61,15 @@ model Variant {
 }
 
 model Order {
-  id         String      @id @default(cuid())
-  customerId String?
-  total      Float
-  status     String      @default("pending")
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
-  items      OrderItem[]
+  id              String      @id @default(cuid())
+  customerId      String?
+  total           Float
+  status          String      @default("pending")
+  phone           String?     // <-- new
+  address         String?     // <-- new
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  items           OrderItem[]
 }
 
 model OrderItem {

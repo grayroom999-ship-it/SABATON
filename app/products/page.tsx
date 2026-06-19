@@ -18,12 +18,12 @@ interface Product {
   name: string
   price: number
   category: string
-  gender: 'male' | 'female'
+  gender: 'male' | 'female' | 'unisex'
   description: string
   imageUrl: string
   hoverImageUrl?: string
   variants: Variant[]
-  blurDataUrl: string   // ✅ Added for blur placeholder
+  blurDataUrl: string
 }
 
 interface ProductsResponse {
@@ -64,7 +64,6 @@ export default function ProductsPage() {
     colors: '',
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
-  // Image upload states (file + URL)
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [uploadingImage, setUploadingImage] = useState(false)
@@ -75,17 +74,13 @@ export default function ProductsPage() {
   const [uploadingHoverImage, setUploadingHoverImage] = useState(false)
   const [hoverImageUploadError, setHoverImageUploadError] = useState<string | null>(null)
 
-  // Delete product state
   const [deletingId, setDeletingId] = useState<string | null>(null)
-
-  // Hover state for image swap
   const [hoveredProductId, setHoveredProductId] = useState<string | null>(null)
 
   const abortControllerRef = useRef<AbortController | null>(null)
   const categories = ['all', 'casual', 'formal', 'boots']
   const genders = ['all', 'male', 'female']
 
-  // Check for existing admin session on mount
   useEffect(() => {
     const storedAuth = sessionStorage.getItem('admin_auth')
     const storedPassword = sessionStorage.getItem('admin_password')
@@ -96,7 +91,6 @@ export default function ProductsPage() {
     }
   }, [])
 
-  // Reset page when filters change
   useEffect(() => {
     setPage(1)
   }, [selectedCategory, selectedGender, searchTerm])
@@ -150,7 +144,6 @@ export default function ProductsPage() {
     return [...new Set(variants.map((v) => v.size))].sort((a, b) => a - b).join(', ')
   }
 
-  // ---------- Admin handlers ----------
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault()
     const trimmedPassword = adminPassword.trim()
@@ -202,7 +195,6 @@ export default function ProductsPage() {
     }
   }
 
-  // Helper: upload a single file to /api/upload
   const uploadFile = async (file: File): Promise<string> => {
     const formData = new FormData()
     formData.append('file', file)
@@ -221,7 +213,6 @@ export default function ProductsPage() {
     return data.url
   }
 
-  // Handle main image selection: upload and set URL
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -246,7 +237,6 @@ export default function ProductsPage() {
     }
   }
 
-  // Handle hover image selection
   const handleHoverImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -362,7 +352,6 @@ export default function ProductsPage() {
     <main className="bg-white">
       <Navbar />
 
-      {/* HERO SECTION */}
       <div className="pt-24 pb-12 bg-white">
         <div className="container-custom text-center">
           <span className="text-amber-600 text-sm tracking-widest font-serif uppercase">Our finest collection</span>
@@ -376,7 +365,6 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      {/* Main content */}
       <div className="container-custom pb-16">
         {/* Admin button */}
         <div className="flex justify-end mb-6">
@@ -392,7 +380,7 @@ export default function ProductsPage() {
           </button>
         </div>
 
-        {/* Admin Authentication */}
+        {/* Admin Auth */}
         {adminMode && !isAdminAuthenticated && (
           <div className="mb-10 p-6 border border-amber-200 bg-amber-50/30 rounded-lg">
             <div className="flex justify-between items-center mb-4">
@@ -417,7 +405,7 @@ export default function ProductsPage() {
           </div>
         )}
 
-        {/* Admin Panel (Add Product form) WITH FILE UPLOADS */}
+        {/* Admin Panel */}
         {adminMode && isAdminAuthenticated && (
           <div className="mb-10 p-6 border border-green-200 bg-green-50/30 rounded-lg">
             <div className="flex justify-between items-center mb-4">
@@ -481,8 +469,6 @@ export default function ProductsPage() {
                       <option value="female">Female</option>
                     </select>
                   </div>
-
-                  {/* MAIN IMAGE UPLOAD */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Main Image *</label>
                     <div className="flex items-center gap-3">
@@ -497,13 +483,10 @@ export default function ProductsPage() {
                         </div>
                       )}
                     </div>
-                    {imageUploadError && (
-                      <p className="text-red-500 text-xs mt-1">{imageUploadError}</p>
-                    )}
+                    {imageUploadError && <p className="text-red-500 text-xs mt-1">{imageUploadError}</p>}
                     {uploadingImage && <p className="text-gray-400 text-xs mt-1">Uploading image, please wait...</p>}
                   </div>
 
-                  {/* HOVER IMAGE UPLOAD (optional) */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Hover Image (optional)</label>
                     <div className="flex items-center gap-3">
@@ -518,9 +501,7 @@ export default function ProductsPage() {
                         </div>
                       )}
                     </div>
-                    {hoverImageUploadError && (
-                      <p className="text-red-500 text-xs mt-1">{hoverImageUploadError}</p>
-                    )}
+                    {hoverImageUploadError && <p className="text-red-500 text-xs mt-1">{hoverImageUploadError}</p>}
                     <p className="text-xs text-gray-400 mt-1">Will swap with main image on hover</p>
                   </div>
 
@@ -566,9 +547,8 @@ export default function ProductsPage() {
           </div>
         )}
 
-        {/* FILTER BAR */}
+        {/* Filter Bar */}
         <div className="mb-10">
-          {/* Desktop horizontal layout */}
           <div className="hidden md:flex items-center gap-6 w-full">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
@@ -619,7 +599,6 @@ export default function ProductsPage() {
             )}
           </div>
 
-          {/* Mobile layout */}
           <div className="md:hidden">
             <div className="flex items-center gap-2 mb-3">
               <div className="relative flex-1">
@@ -687,7 +666,7 @@ export default function ProductsPage() {
           </div>
         </div>
 
-        {/* PRODUCTS GRID */}
+        {/* Products Grid */}
         <style jsx>{`
           .products-grid {
             display: grid;
@@ -728,7 +707,6 @@ export default function ProductsPage() {
                 >
                   <Link href={`/products/${product.id}`}>
                     <div className="relative aspect-square bg-gray-100 overflow-hidden">
-                      {/* Main image with blur placeholder */}
                       <Image
                         src={product.imageUrl}
                         alt={product.name}
@@ -738,11 +716,11 @@ export default function ProductsPage() {
                         }`}
                         placeholder="blur"
                         blurDataURL={product.blurDataUrl}
+                        sizes="(max-width: 768px) 50vw, (max-width: 1200px) 50vw, 25vw"
                         onError={(e) => {
                           (e.target as HTMLImageElement).src = '/images/placeholder.webp'
                         }}
                       />
-                      {/* Hover image with blur placeholder */}
                       {product.hoverImageUrl && (
                         <Image
                           src={product.hoverImageUrl}
@@ -753,16 +731,15 @@ export default function ProductsPage() {
                           }`}
                           placeholder="blur"
                           blurDataURL={product.blurDataUrl}
+                          sizes="(max-width: 768px) 50vw, (max-width: 1200px) 50vw, 25vw"
                           onError={(e) => {
                             (e.target as HTMLImageElement).src = '/images/placeholder.webp'
                           }}
                         />
                       )}
-                      {/* Heart icon */}
                       <button className="absolute top-2 right-2 bg-white/80 p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition">
                         <Heart size={16} className="text-gray-600 hover:text-red-500" />
                       </button>
-                      {/* Quick view overlay */}
                       <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
                         <span className="bg-white text-gray-800 px-3 py-1.5 text-xs font-medium flex items-center gap-1">
                           <Eye size={14} /> Quick View
@@ -775,9 +752,13 @@ export default function ProductsPage() {
                           {getCategoryName(product.category)}
                         </span>
                         <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          product.gender === 'male' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'
+                          product.gender === 'male' ? 'bg-blue-100 text-blue-700' :
+                          product.gender === 'female' ? 'bg-pink-100 text-pink-700' :
+                          'bg-gray-100 text-gray-600'
                         }`}>
-                          {product.gender === 'male' ? '👞 Men' : '👠 Women'}
+                          {product.gender === 'male' && '👞 Men'}
+                          {product.gender === 'female' && '👠 Women'}
+                          {product.gender === 'unisex' && '🧑‍🤝‍🧑 Unisex'}
                         </span>
                       </div>
                       <h3 className="font-medium text-gray-800 group-hover:text-amber-600 transition text-sm md:text-base">
@@ -816,7 +797,6 @@ export default function ProductsPage() {
               ))}
             </div>
 
-            {/* Pagination */}
             {productsData.totalPages > 1 && (
               <div className="flex justify-center gap-3 mt-12">
                 <button
