@@ -8,6 +8,115 @@ import { createClient } from '@vercel/postgres';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
+// ─── FAQ Knowledge Base ──────────────────────────────────────
+const FAQ_RESPONSES: Record<string, string> = {
+  "100% genuine leather": "Yes! 👞 All our shoes are crafted from 100% genuine full-grain leather – the highest quality available. We source directly from reputable tanneries to ensure durability and authenticity.",
+  "authentic leather": "Yes! 👞 All our shoes are crafted from 100% genuine full-grain leather – the highest quality available. We source directly from reputable tanneries to ensure durability and authenticity.",
+  "leather from": "Our leather is sourced from tanneries in Europe and South America, known for their strict quality control and sustainable practices. We select only the finest hides for our handcrafted shoes.",
+  "origin of leather": "Our leather is sourced from tanneries in Europe and South America, known for their strict quality control and sustainable practices. We select only the finest hides for our handcrafted shoes.",
+  "full-grain": "**Full-grain leather** is the highest quality – it retains the natural grain and develops a beautiful patina over time. **Top-grain** has been sanded to remove imperfections. We use full-grain for superior durability and breathability.",
+  "top-grain": "**Full-grain leather** is the highest quality – it retains the natural grain and develops a beautiful patina over time. **Top-grain** has been sanded to remove imperfections. We use full-grain for superior durability and breathability.",
+  "care for these shoes": "To maintain your shoes: ① Wipe with a damp cloth after each use. ② Use a quality leather conditioner monthly. ③ Polish with matching colour cream. ④ Stuff with cedar shoe trees to maintain shape. ⑤ Avoid direct sunlight and rain.",
+  "clean leather": "To maintain your shoes: ① Wipe with a damp cloth after each use. ② Use a quality leather conditioner monthly. ③ Polish with matching colour cream. ④ Stuff with cedar shoe trees to maintain shape. ⑤ Avoid direct sunlight and rain.",
+  "polish": "To maintain your shoes: ① Wipe with a damp cloth after each use. ② Use a quality leather conditioner monthly. ③ Polish with matching colour cream. ④ Stuff with cedar shoe trees to maintain shape. ⑤ Avoid direct sunlight and rain.",
+  "condition": "To maintain your shoes: ① Wipe with a damp cloth after each use. ② Use a quality leather conditioner monthly. ③ Polish with matching colour cream. ④ Stuff with cedar shoe trees to maintain shape. ⑤ Avoid direct sunlight and rain.",
+  "rainy season": "Our shoes are treated with water-resistant sealants. However, we recommend avoiding prolonged exposure to heavy rain. Use a waterproofing spray and let them air dry naturally away from direct heat if they get wet.",
+  "waterproof": "Our shoes are treated with water-resistant sealants. However, we recommend avoiding prolonged exposure to heavy rain. Use a waterproofing spray and let them air dry naturally away from direct heat if they get wet.",
+  "good for rain": "Our shoes are treated with water-resistant sealants. However, we recommend avoiding prolonged exposure to heavy rain. Use a waterproofing spray and let them air dry naturally away from direct heat if they get wet.",
+  "resistant": "Our shoes are treated with water-resistant sealants. However, we recommend avoiding prolonged exposure to heavy rain. Use a waterproofing spray and let them air dry naturally away from direct heat if they get wet.",
+  "how long do these last": "With proper care, our full-grain leather shoes last 5–10+ years. They are hand-stitched and Goodyear-welted (on select models), allowing resoling when needed – extending their life significantly.",
+  "durability": "With proper care, our full-grain leather shoes last 5–10+ years. They are hand-stitched and Goodyear-welted (on select models), allowing resoling when needed – extending their life significantly.",
+  "lifespan": "With proper care, our full-grain leather shoes last 5–10+ years. They are hand-stitched and Goodyear-welted (on select models), allowing resoling when needed – extending their life significantly.",
+  "handmade": "Yes! Every pair is handcrafted in Buea by our skilled artisans using traditional shoemaking techniques – hand-stitching, lasting, and finishing each shoe with precision.",
+  "handcrafted": "Yes! Every pair is handcrafted in Buea by our skilled artisans using traditional shoemaking techniques – hand-stitching, lasting, and finishing each shoe with precision.",
+  "hand-stitched": "Yes! Every pair is handcrafted in Buea by our skilled artisans using traditional shoemaking techniques – hand-stitching, lasting, and finishing each shoe with precision.",
+
+  "what size should I order": "To find your perfect size: ① Measure your foot length from heel to longest toe (in cm). ② Use our size chart on each product page. ③ Size up if you're between sizes. ④ We offer free size exchanges within 7 days if the fit isn't right.",
+  "size guide": "To find your perfect size: ① Measure your foot length from heel to longest toe (in cm). ② Use our size chart on each product page. ③ Size up if you're between sizes. ④ We offer free size exchanges within 7 days if the fit isn't right.",
+  "size chart": "To find your perfect size: ① Measure your foot length from heel to longest toe (in cm). ② Use our size chart on each product page. ③ Size up if you're between sizes. ④ We offer free size exchanges within 7 days if the fit isn't right.",
+  "run true to size": "Most styles run true to size (TTS). If you're between sizes, we recommend sizing up for comfort, especially if you plan to wear thicker socks. Check each product page for specific fit notes.",
+  "fit compared": "Most styles run true to size (TTS). If you're between sizes, we recommend sizing up for comfort, especially if you plan to wear thicker socks. Check each product page for specific fit notes.",
+  "wide size": "We offer standard width (D) for men and (B) for women. Select styles are available in wide (E) – check the product page for width options. If you need a custom width, contact us and we'll do our best to accommodate.",
+  "narrow": "We offer standard width (D) for men and (B) for women. Select styles are available in wide (E) – check the product page for width options. If you need a custom width, contact us and we'll do our best to accommodate.",
+  "comfortable all day": "Yes! Our shoes feature leather-lined footbeds, cushioned insoles, and shock-absorbing soles – designed for all-day comfort. They become even more comfortable as the leather moulds to your foot.",
+  "all day wear": "Yes! Our shoes feature leather-lined footbeds, cushioned insoles, and shock-absorbing soles – designed for all-day comfort. They become even more comfortable as the leather moulds to your foot.",
+  "break in period": "Full-grain leather requires a break-in period of 3–5 wears. Wear them for short periods initially with thick socks. The leather will soften and mould to your foot. Use a leather conditioner to speed up the process.",
+  "stiff": "Full-grain leather requires a break-in period of 3–5 wears. Wear them for short periods initially with thick socks. The leather will soften and mould to your foot. Use a leather conditioner to speed up the process.",
+  "insoles": "Our shoes have removable leather-covered insoles. You can replace them with custom orthotics for added arch support if needed – the insoles are easily removable.",
+  "arch support": "Our shoes have removable leather-covered insoles. You can replace them with custom orthotics for added arch support if needed – the insoles are easily removable.",
+  "orthotics": "Our shoes have removable leather-covered insoles. You can replace them with custom orthotics for added arch support if needed – the insoles are easily removable.",
+
+  "Mobile Money": "Yes! We accept MTN Mobile Money and Orange Money. Simply select your preferred method at checkout and follow the payment prompt. Payment is processed securely via our payment gateway.",
+  "MTN MoMo": "Yes! We accept MTN Mobile Money and Orange Money. Simply select your preferred method at checkout and follow the payment prompt. Payment is processed securely via our payment gateway.",
+  "Orange Money": "Yes! We accept MTN Mobile Money and Orange Money. Simply select your preferred method at checkout and follow the payment prompt. Payment is processed securely via our payment gateway.",
+  "payment secure": "Yes – all payments are processed through Vercel's secure payment gateway. We never store your payment details. Your transaction is encrypted and protected.",
+  "pay on delivery": "We offer pay-on-delivery for orders within Buea town. A 50% deposit is required upfront to confirm your order, with the balance paid on delivery. This option is available at checkout.",
+  "cash on delivery": "We offer pay-on-delivery for orders within Buea town. A 50% deposit is required upfront to confirm your order, with the balance paid on delivery. This option is available at checkout.",
+  "total costs": "The total cost includes: product price + delivery fee (if applicable). There are no hidden charges. The final amount is clearly displayed before you confirm your order.",
+  "hidden fees": "The total cost includes: product price + delivery fee (if applicable). There are no hidden charges. The final amount is clearly displayed before you confirm your order.",
+  "bulk discount": "Yes – we offer bulk discounts for orders of 5+ pairs. Contact us directly with your requirements and we'll provide a custom quote. The discount increases with volume.",
+  "bulk order": "Yes – we offer bulk discounts for orders of 5+ pairs. Contact us directly with your requirements and we'll provide a custom quote. The discount increases with volume.",
+  "wholesale": "Yes – we offer bulk discounts for orders of 5+ pairs. Contact us directly with your requirements and we'll provide a custom quote. The discount increases with volume.",
+  "discount": "We occasionally run promotions. Follow us on social media or subscribe to our newsletter for exclusive discount codes and early access to sales.",
+  "promo": "We occasionally run promotions. Follow us on social media or subscribe to our newsletter for exclusive discount codes and early access to sales.",
+  "coupon": "We occasionally run promotions. Follow us on social media or subscribe to our newsletter for exclusive discount codes and early access to sales.",
+
+  "delivery to my area": "We deliver across Cameroon. **Buea town:** Free delivery. **Outside Buea:** Delivery fees are calculated at checkout based on your location. Fees start from 1,500 FCFA.",
+  "shipping cost": "We deliver across Cameroon. **Buea town:** Free delivery. **Outside Buea:** Delivery fees are calculated at checkout based on your location. Fees start from 1,500 FCFA.",
+  "delivery fee": "We deliver across Cameroon. **Buea town:** Free delivery. **Outside Buea:** Delivery fees are calculated at checkout based on your location. Fees start from 1,500 FCFA.",
+  "how long to arrive": "**Buea town:** Same-day dispatch, delivered within 24 hours. **Other locations:** 2–5 business days depending on your region. You'll receive a tracking number once your order is dispatched.",
+  "delivery time": "**Buea town:** Same-day dispatch, delivered within 24 hours. **Other locations:** 2–5 business days depending on your region. You'll receive a tracking number once your order is dispatched.",
+  "shipping time": "**Buea town:** Same-day dispatch, delivered within 24 hours. **Other locations:** 2–5 business days depending on your region. You'll receive a tracking number once your order is dispatched.",
+  "order dispatched": "Orders placed before 2 PM (WAT) are dispatched the same day. You'll receive a WhatsApp message with delivery updates and a tracking link.",
+  "shipped": "Orders placed before 2 PM (WAT) are dispatched the same day. You'll receive a WhatsApp message with delivery updates and a tracking link.",
+  "pick up from shop": "Yes – you can pick up your order from our shop in Molyko, Buea (near the main roundabout). Select 'Pick Up' at checkout. We'll notify you when your order is ready.",
+  "in-store pickup": "Yes – you can pick up your order from our shop in Molyko, Buea (near the main roundabout). Select 'Pick Up' at checkout. We'll notify you when your order is ready.",
+  "international delivery": "Currently, we deliver within Cameroon only. We are working on expanding to other countries. For special requests, contact us directly.",
+  "outside Cameroon": "Currently, we deliver within Cameroon only. We are working on expanding to other countries. For special requests, contact us directly.",
+  "do you ship to Douala": "Yes, we ship nationwide. Delivery to Douala takes 2–3 days, and to Yaoundé 3–4 business days.",
+  "do you ship to Yaoundé": "Yes, we ship nationwide. Delivery to Douala takes 2–3 days, and to Yaoundé 3–4 business days.",
+
+  "return policy": "**14‑day return policy.** Unused items in original packaging can be returned within 14 days for a full refund or exchange. Contact us to initiate a return. Return shipping is paid by the customer.",
+  "exchange policy": "**14‑day return policy.** Unused items in original packaging can be returned within 14 days for a full refund or exchange. Contact us to initiate a return. Return shipping is paid by the customer.",
+  "how to return": "To return/exchange: ① Email us at hello@sabaton.cm with your order number. ② We'll send you return instructions. ③ Package the item securely. ④ Drop off at the nearest courier. ⑤ We process returns within 2–3 business days.",
+  "warranty": "We offer a **1‑year warranty** against manufacturing defects (e.g., sole separation, stitching issues). This doesn't cover normal wear and tear, misuse, or water damage. Contact us if you have a warranty claim.",
+  "guarantee": "We offer a **1‑year warranty** against manufacturing defects (e.g., sole separation, stitching issues). This doesn't cover normal wear and tear, misuse, or water damage. Contact us if you have a warranty claim.",
+  "contact customer service": "You can reach us via: 📞 Phone: +237 6XX XXX XXX | 📧 Email: hello@sabaton.cm | 💬 WhatsApp: +237 6XX XXX XXX. We respond within 1‑2 hours during business hours.",
+  "customer support": "You can reach us via: 📞 Phone: +237 6XX XXX XXX | 📧 Email: hello@sabaton.cm | 💬 WhatsApp: +237 6XX XXX XXX. We respond within 1‑2 hours during business hours.",
+  "more pictures": "Each product page has multiple images showing different angles. If you need specific photos, contact us and we'll send them directly. We're happy to help!",
+
+  "location": "We're located at **Molyko, Buea, Cameroon** – near the main roundabout. Open Monday–Saturday, 8 AM – 6 PM (WAT). We look forward to welcoming you!",
+  "where is shop": "We're located at **Molyko, Buea, Cameroon** – near the main roundabout. Open Monday–Saturday, 8 AM – 6 PM (WAT). We look forward to welcoming you!",
+  "help choose right shoe": "Of course! 👞 Tell me: ① The occasion (e.g., work, wedding, weekend). ② Your style preference. ③ Your budget. I'll recommend the perfect pair.",
+  "style advice": "Of course! 👞 Tell me: ① The occasion (e.g., work, wedding, weekend). ② Your style preference. ③ Your budget. I'll recommend the perfect pair.",
+  "business hours": "We're open **Monday – Saturday, 8 AM – 6 PM (WAT)**. We're closed on Sundays. You can also reach us online 24/7!",
+  "other colors": "Available colours are listed on each product page. If your preferred colour isn't listed, contact us – we may have it on special order.",
+  "why buy from you": "🔹 100% genuine full-grain leather. 🔹 Handcrafted in Buea. 🔹 Free delivery in Buea. 🔹 14‑day returns. 🔹 1‑year warranty. 🔹 Expert customer support. 🔹 We support local artisans.",
+  "sustainable": "Yes! We use sustainable tanning processes, minimise waste, and support local artisans. Our packaging is recyclable. We're committed to ethical, eco‑conscious production.",
+  "eco friendly": "Yes! We use sustainable tanning processes, minimise waste, and support local artisans. Our packaging is recyclable. We're committed to ethical, eco‑conscious production.",
+  "gift wrapping": "Yes – we offer gift wrapping for an additional 1,500 FCFA. You can select this option at checkout. A personalised message can be included.",
+  "custom order": "We offer custom orders! Lead time is 2–3 weeks. Contact us with your requirements – colour, material, size, and design preferences – and we'll create a unique pair just for you.",
+  "bespoke": "We offer custom orders! Lead time is 2–3 weeks. Contact us with your requirements – colour, material, size, and design preferences – and we'll create a unique pair just for you.",
+  "vegan leather": "Currently, we specialise in genuine leather. We're exploring sustainable vegan alternatives for future collections – stay tuned!",
+  "can I try before I buy": "Yes! You can visit our shop in Molyko, Buea, to try on any style. No appointment needed.",
+  "student discount": "We offer a 10% discount for students and teachers with a valid ID. Contact us to apply.",
+  "teacher discount": "We offer a 10% discount for students and teachers with a valid ID. Contact us to apply.",
+  "delivery range": "We deliver across Cameroon. For locations outside major cities, additional fees may apply.",
+  "how do I track my order": "You'll receive a tracking link via WhatsApp once your order is dispatched. You can also track in your account.",
+  "after-sales service": "Yes – we offer free cleaning and conditioning for 6 months after purchase. Just bring your shoes to our shop.",
+  "size exchange": "Yes – we offer free size exchanges within 7 days. Contact us to arrange an exchange.",
+};
+
+function getFAQResponse(text: string): string | null {
+  const lower = text.toLowerCase();
+  for (const [key, response] of Object.entries(FAQ_RESPONSES)) {
+    if (lower.includes(key.toLowerCase())) {
+      return response;
+    }
+  }
+  return null;
+}
+
 // ─── Local embedding model ──────────────────────────────────
 let localExtractor: any = null;
 let modelLoading: Promise<any> | null = null;
@@ -444,6 +553,24 @@ Be concise, friendly, and always use FCFA for prices.
   // ─── Generate response ─────────────────────────────────────
 
   try {
+    // ─── FIRST: Check FAQ ──────────────────────────────────────
+    const lastUserMsg = messages.length > 0 ? messages[messages.length - 1] : null;
+    if (lastUserMsg && lastUserMsg.role === 'user') {
+      const faqResponse = getFAQResponse(lastUserMsg.content);
+      if (faqResponse) {
+        console.log('📚 FAQ match found – returning instant response.');
+        return Response.json({
+          message: faqResponse,
+          products: [],
+          recommendations: [],
+          cart: null,
+          checkout: false,
+        });
+      }
+    }
+
+    // ─── If not FAQ, proceed with LLM ──────────────────────────
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
@@ -500,7 +627,6 @@ Be concise, friendly, and always use FCFA for prices.
     let finalMessage = result.text;
 
     // ─── FALLBACK: Force showProducts for add/buy if not called ──
-    const lastUserMsg = messages.length > 0 ? messages[messages.length - 1] : null;
     if (lastUserMsg && lastUserMsg.role === 'user') {
       const text = lastUserMsg.content;
       console.log(`📝 Processing user message: "${text}"`);
@@ -562,9 +688,8 @@ Be concise, friendly, and always use FCFA for prices.
 
     // ─── CHECKOUT DETECTION ─────────────────────────────────────
     let checkout = false;
-    const checkUserMsg = messages.length > 0 ? messages[messages.length - 1] : null;
-    if (checkUserMsg && checkUserMsg.role === 'user') {
-      const lower = checkUserMsg.content.toLowerCase();
+    if (lastUserMsg && lastUserMsg.role === 'user') {
+      const lower = lastUserMsg.content.toLowerCase();
       if (/\b(checkout|proceed to checkout|place order|complete order)\b/.test(lower)) {
         const cart = await prisma.cart.findUnique({
           where: { sessionId: effectiveSessionId },
@@ -613,7 +738,7 @@ Be concise, friendly, and always use FCFA for prices.
       recommendations,
       products: productData,
       cart: cartData ? cartData.items : null,
-      checkout, // ← NEW: flag to trigger checkout modal
+      checkout,
     });
   } catch (error) {
     console.error('❌ Chat API error:', error);
