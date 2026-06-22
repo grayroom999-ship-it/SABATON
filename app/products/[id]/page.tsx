@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
-import { ChevronLeft, Truck, Shield, RotateCcw } from 'lucide-react'
+import { ChevronLeft, Truck, Shield, RotateCcw, ShoppingCart, Check } from 'lucide-react'
 import Navbar from '../../components/ui/Navbar'
 import ChatBot from '../../../components/Chatbot'
 import toast from 'react-hot-toast'
@@ -40,6 +40,7 @@ export default function ProductDetailPage() {
   const [selectedColor, setSelectedColor] = useState<string>('')
   const [quantity, setQuantity] = useState(1)
   const [loading, setLoading] = useState(true)
+  const [isAdding, setIsAdding] = useState(false)
 
   const normalizeSize = (size: unknown): string => String(size)
   const getStockNumber = (stock: unknown): number => {
@@ -115,13 +116,14 @@ export default function ProductDetailPage() {
     if (params?.id) fetchProduct()
   }, [params.id])
 
-  const addToCartViaChat = () => {
+  // ─── DIRECT ADD TO CART ──────────────────────────────────────
+  const addToCartDirect = async () => {
     if (!selectedSize) {
       toast.error('Please select a size')
       return
     }
     if (!selectedColor) {
-      toast.error('Please select a color')
+      toast.error('Please select a colour')
       return
     }
     if (currentStock === 0) {
@@ -133,16 +135,44 @@ export default function ProductDetailPage() {
       return
     }
 
-    const event = new CustomEvent('chatbot:addProduct', {
-      detail: {
-        productName: product?.name,
-        size: selectedSize,
-        color: selectedColor,
-        quantity: quantity
+    setIsAdding(true)
+
+    // Get or create session ID
+    let sessionId = localStorage.getItem('chat_session_id')
+    if (!sessionId) {
+      sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
+      localStorage.setItem('chat_session_id', sessionId)
+    }
+
+    try {
+      const response = await fetch('/api/cart/add', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-id': sessionId,
+        },
+        body: JSON.stringify({
+          productId: product!.id,
+          size: Number(selectedSize),
+          color: selectedColor,
+          quantity,
+        }),
+      })
+
+      if (response.ok) {
+        toast.success(`Added ${quantity} x ${product!.name} to cart!`)
+        // Update the cart badge by dispatching event
+        window.dispatchEvent(new Event('cartUpdated'))
+      } else {
+        const error = await response.json()
+        toast.error(error.error || 'Could not add item')
       }
-    })
-    window.dispatchEvent(event)
-    toast.success('Opening chatbot to add item to cart!')
+    } catch (error) {
+      console.error('Add to cart error:', error)
+      toast.error('Network error. Please try again.')
+    } finally {
+      setIsAdding(false)
+    }
   }
 
   if (loading) {
@@ -175,9 +205,9 @@ export default function ProductDetailPage() {
   }
 
   const getGenderDisplay = () => {
-    if (product.gender === 'male') return { label: '👞 Men', style: 'bg-blue-100 text-blue-700' }
-    if (product.gender === 'female') return { label: '👠 Women', style: 'bg-pink-100 text-pink-700' }
-    if (product.gender === 'unisex') return { label: '🧑‍🤝‍🧑 Unisex', style: 'bg-gray-100 text-gray-600' }
+    if (product.gender === 'male') return { label: 'Men', style: 'bg-blue-100 text-blue-700' }
+    if (product.gender === 'female') return { label: 'Women', style: 'bg-pink-100 text-pink-700' }
+    if (product.gender === 'unisex') return { label: 'Unisex', style: 'bg-gray-100 text-gray-600' }
     return { label: '', style: 'bg-gray-100 text-gray-600' }
   }
 
@@ -186,167 +216,217 @@ export default function ProductDetailPage() {
   return (
     <main>
       <Navbar />
-      <div className="pt-24 pb-16">
-        <div className="container-custom">
-          <Link href="/products" className="inline-flex items-center text-gray-600 hover:text-amber-600 mb-6">
-            <ChevronLeft size={18} />
+      <div className="pt-24 pb-16 bg-gray-50 min-h-screen">
+        <div className="container-custom max-w-6xl mx-auto px-4 sm:px-6">
+          {/* Back button */}
+          <Link
+            href="/products"
+            className="inline-flex items-center text-gray-500 hover:text-amber-600 transition-colors mb-6 text-sm font-medium"
+          >
+            <ChevronLeft size={16} className="mr-1" />
             Back to Shop
           </Link>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-            <div>
-              <div className="bg-gray-100 rounded-lg h-96 lg:h-125 flex items-center justify-center overflow-hidden relative">
-                {product.imageUrl ? (
-                  <Image
-                    src={product.imageUrl}
-                    alt={product.name}
-                    fill
-                    className="object-cover"
-                    priority
-                    placeholder="blur"
-                    blurDataURL={product.blurDataUrl || DEFAULT_BLUR}
-                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = '/images/placeholder.webp'
-                    }}
-                  />
-                ) : (
-                  <span className="text-9xl">👞</span>
-                )}
-              </div>
-
-              {product.hoverImageUrl && (
-                <div className="mt-4">
-                  <p className="text-sm text-gray-500 mb-1">Alternate view</p>
-                  <div className="bg-gray-100 rounded-lg h-48 flex items-center justify-center overflow-hidden relative">
+          <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-0">
+              {/* ─── LEFT: IMAGES ─────────────────────────────────────── */}
+              <div className="bg-gray-50 p-6 lg:p-8 flex flex-col">
+                <div className="relative aspect-square w-full bg-white rounded-xl overflow-hidden shadow-inner">
+                  {product.imageUrl ? (
                     <Image
-                      src={product.hoverImageUrl}
-                      alt={`${product.name} alternate`}
+                      src={product.imageUrl}
+                      alt={product.name}
                       fill
-                      className="object-cover"
+                      className="object-contain p-4 transition-transform duration-300 hover:scale-105"
+                      priority
                       placeholder="blur"
                       blurDataURL={product.blurDataUrl || DEFAULT_BLUR}
-                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                      sizes="(max-width: 768px) 100vw, 50vw"
                       onError={(e) => {
                         (e.target as HTMLImageElement).src = '/images/placeholder.webp'
                       }}
                     />
+                  ) : (
+                    <span className="text-9xl flex items-center justify-center h-full">👞</span>
+                  )}
+                </div>
+
+                {product.hoverImageUrl && (
+                  <div className="mt-4">
+                    <p className="text-xs text-gray-400 mb-1">Alternative view</p>
+                    <div className="relative aspect-video w-full bg-white rounded-xl overflow-hidden shadow-inner">
+                      <Image
+                        src={product.hoverImageUrl}
+                        alt={`${product.name} alternate`}
+                        fill
+                        className="object-contain p-2"
+                        placeholder="blur"
+                        blurDataURL={product.blurDataUrl || DEFAULT_BLUR}
+                        sizes="(max-width: 768px) 100vw, 50vw"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = '/images/placeholder.webp'
+                        }}
+                      />
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
 
-            <div>
-              <h1 className="text-3xl font-bold mb-2">{product.name}</h1>
-              <p className="text-3xl font-bold text-amber-600 mb-4">
-                {product.price.toLocaleString()} FCFA
-              </p>
-
-              <p className="text-gray-600 mb-6">{product.description}</p>
-
-              <div className="border-t border-b py-6 mb-6">
-                <div className="mb-4">
-                  <h3 className="font-semibold mb-2">Material:</h3>
-                  <p className="text-gray-600">{product.material}</p>
-                </div>
-
-                <div className="mb-4 flex items-center gap-2">
-                  <span className="font-semibold">For:</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${genderDisplay.style}`}>
+              {/* ─── RIGHT: DETAILS ────────────────────────────────────── */}
+              <div className="p-6 lg:p-8 flex flex-col">
+                <div className="flex-1">
+                  {/* Gender badge */}
+                  <span className={`inline-block text-xs px-3 py-1 rounded-full ${genderDisplay.style} mb-3`}>
                     {genderDisplay.label}
                   </span>
-                </div>
 
-                <div className="mb-4">
-                  <h3 className="font-semibold mb-2">Select Size:</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {availableSizes.map(size => (
-                      <button
-                        key={size}
-                        onClick={() => setSelectedSize(size)}
-                        className={`w-14 py-2 rounded-lg border transition ${
-                          selectedSize === size
-                            ? 'border-amber-600 bg-amber-50 text-amber-600'
-                            : 'border-gray-300 hover:border-amber-600'
-                        }`}
-                      >
-                        {size}
-                      </button>
-                    ))}
+                  <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 leading-tight">
+                    {product.name}
+                  </h1>
+
+                  <p className="text-2xl sm:text-3xl font-bold text-amber-600 mt-2">
+                    {product.price.toLocaleString()} FCFA
+                  </p>
+
+                  <div className="mt-4 border-t border-gray-100 pt-4">
+                    <p className="text-gray-600 text-sm leading-relaxed">
+                      {product.description}
+                    </p>
                   </div>
-                </div>
 
-                {availableColors.length > 0 && (
-                  <div className="mb-4">
-                    <h3 className="font-semibold mb-2">Select Color:</h3>
+                  <div className="mt-4">
+                    <h3 className="text-sm font-semibold text-gray-700">Material</h3>
+                    <p className="text-gray-600 text-sm capitalize">{product.material}</p>
+                  </div>
+
+                  {/* ─── SIZES ───────────────────────────────────────────── */}
+                  <div className="mt-6">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2">Select Size</h3>
                     <div className="flex flex-wrap gap-2">
-                      {availableColors.map(color => (
+                      {availableSizes.map(size => (
                         <button
-                          key={color}
-                          onClick={() => setSelectedColor(color)}
-                          className={`px-4 py-2 rounded-lg border capitalize transition ${
-                            selectedColor === color
+                          key={size}
+                          onClick={() => setSelectedSize(size)}
+                          className={`w-12 h-12 rounded-lg border-2 transition-all flex items-center justify-center text-sm font-medium ${
+                            selectedSize === size
                               ? 'border-amber-600 bg-amber-50 text-amber-600'
-                              : 'border-gray-300 hover:border-amber-600'
+                              : 'border-gray-200 hover:border-amber-300 text-gray-700'
                           }`}
                         >
-                          {color}
+                          {size}
                         </button>
                       ))}
                     </div>
                   </div>
-                )}
 
-                <div className="mb-4">
-                  <h3 className="font-semibold mb-2">Quantity:</h3>
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                      className="w-10 h-10 border rounded-lg hover:bg-gray-50"
-                      disabled={currentStock === 0}
-                    >
-                      -
-                    </button>
-                    <span className="text-lg font-semibold w-12 text-center">{quantity}</span>
-                    <button
-                      onClick={() => setQuantity(Math.min(currentStock, quantity + 1))}
-                      className="w-10 h-10 border rounded-lg hover:bg-gray-50"
-                      disabled={currentStock === 0 || quantity >= currentStock}
-                    >
-                      +
-                    </button>
-                    <span className="text-gray-600 text-sm">
-                      {currentStock} in stock
-                    </span>
+                  {/* ─── COLORS ──────────────────────────────────────────── */}
+                  {availableColors.length > 0 && (
+                    <div className="mt-4">
+                      <h3 className="text-sm font-semibold text-gray-700 mb-2">Select Colour</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {availableColors.map(color => (
+                          <button
+                            key={color}
+                            onClick={() => setSelectedColor(color)}
+                            className={`px-4 py-2 rounded-lg border-2 transition-all text-sm capitalize font-medium ${
+                              selectedColor === color
+                                ? 'border-amber-600 bg-amber-50 text-amber-600'
+                                : 'border-gray-200 hover:border-amber-300 text-gray-700'
+                            }`}
+                          >
+                            {color}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ─── QUANTITY ────────────────────────────────────────── */}
+                  <div className="mt-4">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2">Quantity</h3>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                        className="w-10 h-10 rounded-lg border border-gray-200 hover:border-amber-300 flex items-center justify-center text-gray-600 disabled:opacity-50"
+                        disabled={currentStock === 0}
+                      >
+                        -
+                      </button>
+                      <span className="text-lg font-semibold w-12 text-center">{quantity}</span>
+                      <button
+                        onClick={() => setQuantity(Math.min(currentStock, quantity + 1))}
+                        className="w-10 h-10 rounded-lg border border-gray-200 hover:border-amber-300 flex items-center justify-center text-gray-600 disabled:opacity-50"
+                        disabled={currentStock === 0 || quantity >= currentStock}
+                      >
+                        +
+                      </button>
+                      <span className="text-sm text-gray-500 ml-2">
+                        {currentStock} in stock
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <button
-                onClick={addToCartViaChat}
-                disabled={currentStock === 0}
-                className="w-full bg-amber-600 text-white py-3 rounded-lg font-semibold hover:bg-amber-700 transition disabled:bg-gray-400 disabled:cursor-not-allowed mb-4"
-              >
-                {currentStock === 0 ? 'Out of Stock' : '💬 Add to Cart via Chat'}
-              </button>
+                {/* ─── ADD TO CART BUTTON ────────────────────────────────── */}
+                <div className="mt-6">
+                  <button
+                    onClick={addToCartDirect}
+                    disabled={currentStock === 0 || isAdding}
+                    className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-white font-semibold transition-all shadow-lg ${
+                      currentStock === 0
+                        ? 'bg-gray-400 cursor-not-allowed'
+                        : isAdding
+                        ? 'bg-amber-400 cursor-wait'
+                        : 'bg-amber-600 hover:bg-amber-700 hover:shadow-xl'
+                    }`}
+                  >
+                    {isAdding ? (
+                      <>
+                        <span className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+                        Adding...
+                      </>
+                    ) : currentStock === 0 ? (
+                      'Out of Stock'
+                    ) : (
+                      <>
+                        <ShoppingCart size={18} />
+                        Add to Cart
+                      </>
+                    )}
+                  </button>
+                  <p className="text-xs text-gray-400 text-center mt-2">
+                    Secured checkout • Free delivery in Buea
+                  </p>
+                </div>
 
-              <div className="space-y-3">
-                <div className="flex items-center gap-3 text-gray-600">
-                  <Truck size={20} />
-                  <span>Free delivery in Buea town</span>
+                {/* ─── FEATURES ───────────────────────────────────────────── */}
+                <div className="mt-6 grid grid-cols-3 gap-3 border-t border-gray-100 pt-6">
+                  <div className="flex flex-col items-center text-center">
+                    <Truck size={18} className="text-amber-600 mb-1" />
+                    <span className="text-xs text-gray-500">Free Delivery</span>
+                  </div>
+                  <div className="flex flex-col items-center text-center">
+                    <Shield size={18} className="text-amber-600 mb-1" />
+                    <span className="text-xs text-gray-500">Genuine Leather</span>
+                  </div>
+                  <div className="flex flex-col items-center text-center">
+                    <RotateCcw size={18} className="text-amber-600 mb-1" />
+                    <span className="text-xs text-gray-500">7‑Day Exchange</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3 text-gray-600">
-                  <Shield size={20} />
-                  <span>100% genuine leather</span>
-                </div>
-                <div className="flex items-center gap-3 text-gray-600">
-                  <RotateCcw size={20} />
-                  <span>Size exchange within 7 days</span>
-                </div>
-              </div>
 
-              <div className="mt-8 text-center text-gray-400 text-sm border-t pt-6">
-                <p>💬 Have questions about this product? Click “Add to Cart via Chat” and ask us anything!</p>
+                {/* ─── CHAT PROMPT ────────────────────────────────────────── */}
+                <div className="mt-4 text-center border-t border-gray-100 pt-4">
+                  <p className="text-xs text-gray-400">
+                    💬 Have questions?{' '}
+                    <button
+                      onClick={() => window.dispatchEvent(new CustomEvent('chatbot:open'))}
+                      className="text-amber-600 hover:underline font-medium"
+                    >
+                      Chat with us
+                    </button>
+                  </p>
+                </div>
               </div>
             </div>
           </div>

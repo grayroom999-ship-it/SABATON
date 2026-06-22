@@ -2,19 +2,59 @@ import { generateText } from 'ai';
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { Product, Variant, ShoeCategoryName, AccessoryType } from '@prisma/client';
+import { Product, Variant, ShoeCategoryName } from '@prisma/client';
+import { createClient } from '@vercel/postgres';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-// ─── Helpers ──────────────────────────────────────────────────
+// ─── Local embedding model ──────────────────────────────────
+let localExtractor: any = null;
+let modelLoading: Promise<any> | null = null;
 
-function asShoeCategoryNames(categories: string[]): ShoeCategoryName[] {
-  const validNames = Object.values(ShoeCategoryName);
-  return categories.filter((cat): cat is ShoeCategoryName =>
-    validNames.includes(cat as ShoeCategoryName)
-  );
+async function getLocalEmbedding(text: string): Promise<number[]> {
+  if (!localExtractor) {
+    if (!modelLoading) {
+      console.log('🧠 Loading local embedding model...');
+      const { pipeline } = await import('@xenova/transformers');
+      modelLoading = pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+    }
+    localExtractor = await modelLoading;
+    console.log('✅ Local model ready');
+  }
+  const result = await localExtractor(text, { pooling: 'mean', normalize: true });
+  return Array.from(result.data);
 }
+
+// ─── Helper: Re‑order results to put exact match first ────
+function reorderExactMatch(products: any[], queryText: string): any[] {
+  if (!products || products.length === 0 || !queryText) return products;
+  const trimmed = queryText.trim();
+  if (!trimmed) return products;
+
+  const exactIndex = products.findIndex(
+    (p) => p.name.toLowerCase() === trimmed.toLowerCase()
+  );
+  if (exactIndex > 0) {
+    const matched = products.splice(exactIndex, 1);
+    products.unshift(matched[0]);
+  } else if (exactIndex === -1) {
+    const sortedProducts = [...products].sort((a, b) => b.name.length - a.name.length);
+    for (const p of sortedProducts) {
+      if (trimmed.toLowerCase().includes(p.name.toLowerCase())) {
+        const idx = products.findIndex(item => item.id === p.id);
+        if (idx > 0) {
+          const matched = products.splice(idx, 1);
+          products.unshift(matched[0]);
+        }
+        break;
+      }
+    }
+  }
+  return products;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────
 
 function isProductQuery(text: string): boolean {
   const businessKeywords = [
@@ -26,10 +66,9 @@ function isProductQuery(text: string): boolean {
   if (businessKeywords.some(kw => lower.includes(kw))) return false;
 
   const productKeywords = [
-    'buy', 'want', 'looking for', 'show', 'get', 'need',
-    'i would like', 'i want', 'i need', 'show me',
-    'shoe', 'boot', 'loafer', 'horn', 'accessory',
-    'lace', 'conditioner', 'cream', 'polish', 'brush'
+    'looking for', 'show me', 'show', 'get', 'need', 'want',
+    'i would like', 'i want', 'i need', 'shoe', 'boot', 'loafer',
+    'oxford', 'accessory', 'lace', 'conditioner', 'cream', 'polish', 'brush'
   ];
   return productKeywords.some(kw => lower.includes(kw));
 }
@@ -51,15 +90,15 @@ export async function POST(req: NextRequest) {
     delivery: 'Free delivery within Buea town. Same‑day dispatch for in‑stock items before 2 PM.',
   };
 
-  // ─── Tools defined inside handler to capture sessionId ──
+  // ─── Tools ────────────────────────────────────────────────────
 
   const tools = {
     showProducts: {
       description: `
-        Search for products (shoes or accessories) by name, category, or style.
-        **CRITICAL: You MUST call this tool whenever the user asks about or mentions a product.**
-        Do NOT use for business info – use getBusinessInfo instead.
-        The 'category' parameter should be a descriptive phrase (e.g., "loafer", "boot", "shoe horn", "wedding shoes").
+        Search for products by name, category, or style.
+        Call this tool when the user is asking to see products (e.g., "show me", "looking for", "do you have").
+        Also call this tool when the user says "add" or "buy" without specifying size and colour – this will display product cards so the user can pick.
+        Returns at most 4 products with their variants (size/colour).
       `,
       inputSchema: z.object({
         category: z.string().optional(),
@@ -69,51 +108,97 @@ export async function POST(req: NextRequest) {
       execute: async ({ category, gender, size }: any) => {
         console.log(`🔍 showProducts called with:`, { category, gender, size });
         try {
-          const where: any = {};
+          const supabase = createClient({
+            connectionString: process.env.SUPABASE_DB_URL,
+          });
 
-          if (category) {
-            const words = category.split(/\s+/).filter((w: string) => w.length > 0);
-            if (words.length === 1) {
-              where.name = { contains: words[0], mode: 'insensitive' };
-            } else if (words.length > 1) {
-              where.AND = words.map((word: string) => ({
-                name: { contains: word, mode: 'insensitive' }
-              }));
-            }
-          }
-
-          if (gender) where.gender = { equals: gender, mode: 'insensitive' };
-
-          if (Object.keys(where).length === 0) {
-            console.log('⚠️ No filters provided to showProducts');
+          let queryText = category || '';
+          if (gender) queryText += ` ${gender}`;
+          if (!queryText.trim()) {
+            console.log('⚠️ No search text provided');
             return { products: [] };
           }
 
-          const products = await prisma.product.findMany({
-            where,
-            include: { variants: true },
-          });
+          // ─── Try vector search ──────────────────────────────
+          console.log(`🧠 Generating embedding for: "${queryText}"`);
+          const queryVector = await getLocalEmbedding(queryText);
+          const vectorString = `[${queryVector.join(',')}]`;
 
-          console.log(`📦 Found ${products.length} products for query`);
+          console.log(`🔎 Performing vector search...`);
+          const vectorPromise = supabase.sql`
+            SELECT 
+              id,
+              name,
+              price,
+              gender,
+              material,
+              category,
+              "imageUrl" as image,
+              1 - (embedding <=> ${vectorString}::vector) AS similarity
+            FROM "Product"
+            WHERE embedding IS NOT NULL
+            ORDER BY embedding <=> ${vectorString}::vector
+            LIMIT 4;
+          `;
 
-          let filteredProducts = products;
-          if (size !== undefined && size !== null) {
-            filteredProducts = products.filter((product) =>
-              product.variants.some((variant) => variant.size === size)
-            );
-            console.log(`📏 After size filter: ${filteredProducts.length} products`);
+          const TIMEOUT_MS = 5000;
+          let products;
+          try {
+            const result = await Promise.race([
+              vectorPromise,
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('VECTOR_TIMEOUT')), TIMEOUT_MS)
+              )
+            ]);
+            products = (result as any).rows;
+            console.log(`📦 Vector search found ${products.length} products`);
+          } catch (err: any) {
+            if (err.message === 'VECTOR_TIMEOUT') {
+              console.warn('⏱️ Vector timed out, falling back to keyword');
+              throw new Error('Fallback');
+            } else {
+              throw err;
+            }
           }
 
+          // ─── Apply size filter ──────────────────────────────
+          let filteredProducts = products;
+          if (size !== undefined && size !== null) {
+            const productIds = products.map((p: any) => p.id);
+            const variants = await prisma.variant.findMany({
+              where: {
+                productId: { in: productIds },
+                size: Number(size),
+              },
+              select: { productId: true },
+            });
+            const validProductIds = new Set(variants.map(v => v.productId));
+            filteredProducts = products.filter((p: any) => validProductIds.has(p.id));
+          }
+
+          // ─── Fetch full details ─────────────────────────────
+          const finalProductIds = filteredProducts.map((p: any) => p.id);
+          let fullProducts: any[] = [];
+          if (finalProductIds.length > 0) {
+            fullProducts = await prisma.product.findMany({
+              where: { id: { in: finalProductIds } },
+              include: { variants: true },
+            });
+          }
+
+          // ─── Re‑order to put exact match first ──────────────
+          fullProducts = reorderExactMatch(fullProducts, queryText);
+
           return {
-            products: filteredProducts.map((p) => ({
+            products: fullProducts.map((p) => ({
               id: p.id,
               name: p.name,
               price: p.price,
               gender: p.gender,
               material: p.material,
               category: p.category,
-              image: (p as any).image || '/images/placeholder.jpg',
-              variants: p.variants.map((v) => ({
+              image: p.imageUrl || '/images/placeholder.jpg',
+              variants: p.variants.map((v: Variant) => ({
                 id: v.id,
                 size: v.size,
                 stock: v.stock,
@@ -122,14 +207,65 @@ export async function POST(req: NextRequest) {
             })),
           };
         } catch (error) {
-          console.error('❌ showProducts tool error:', error);
-          return { products: [] };
+          // ─── Fallback: Prisma keyword search ──────────────
+          console.log('⚠️ Falling back to Prisma keyword search...');
+          try {
+            const words = (category || '').split(/\s+/).filter((w: string) => w.length > 0);
+            const where: any = {};
+            if (words.length > 0) {
+              where.OR = words.map((word: string) => ({
+                OR: [
+                  { name: { contains: word, mode: 'insensitive' } },
+                  { material: { contains: word, mode: 'insensitive' } },
+                  { category: { contains: word, mode: 'insensitive' } },
+                  { searchText: { contains: word, mode: 'insensitive' } },
+                ]
+              }));
+            }
+            if (gender) where.gender = { equals: gender, mode: 'insensitive' };
+
+            let products = await prisma.product.findMany({
+              where,
+              include: { variants: true },
+              take: 4,
+            });
+
+            if (size !== undefined && size !== null) {
+              products = products.filter((p) =>
+                p.variants.some((v) => v.size === Number(size))
+              );
+            }
+
+            // ─── Re‑order to put exact match first ──────────────
+            products = reorderExactMatch(products, category || '');
+
+            return {
+              products: products.map((p) => ({
+                id: p.id,
+                name: p.name,
+                price: p.price,
+                gender: p.gender,
+                material: p.material,
+                category: p.category,
+                image: p.imageUrl || '/images/placeholder.jpg',
+                variants: p.variants.map((v: Variant) => ({
+                  id: v.id,
+                  size: v.size,
+                  stock: v.stock,
+                  color: v.color,
+                })),
+              })),
+            };
+          } catch (fallbackError) {
+            console.error('❌ Fallback error:', fallbackError);
+            return { products: [] };
+          }
         }
       },
     },
 
     getBusinessInfo: {
-      description: `Provide shop information (location, hours, returns, contact, about, delivery). **Call this for any business‑related question.**`,
+      description: `Provide shop information (location, hours, returns, contact, about, delivery).`,
       inputSchema: z.object({ query: z.string().optional() }),
       execute: async (_args: any) => {
         console.log(`📞 getBusinessInfo called`);
@@ -137,88 +273,76 @@ export async function POST(req: NextRequest) {
       },
     },
 
-    // ─── FIXED addToCart ──────────────────────────────────────
     addToCart: {
-      description: 'Add a product to the shopping cart. Provide productId, size, color, and quantity.',
+      description: 'Add a product to the cart. Provide productId, size, colour, and quantity. If colour is not provided, the tool will use the first available colour for that size – but the assistant should always ask for colour first.',
       inputSchema: z.object({
         productId: z.string(),
         size: z.number().int().positive(),
-        color: z.string(),
+        color: z.string().optional().default(''),
         quantity: z.number().int().positive().default(1),
       }),
       execute: async ({ productId, size, color, quantity }: any) => {
         console.log(`🛒 addToCart called:`, { productId, size, color, quantity });
 
-        // ─── 1. Resolve productId if it's not a valid CUID ──
         let actualProductId = productId;
-        // Simple check: CUIDs usually start with 'cmq' or similar; slugs are words with hyphens
         if (!productId.startsWith('cmq')) {
-          console.log(`🔍 Resolving product name/slug: "${productId}"`);
           const product = await prisma.product.findFirst({
-            where: {
-              name: {
-                equals: productId,
-                mode: 'insensitive',
-              },
-            },
+            where: { name: { equals: productId, mode: 'insensitive' } },
           });
-          if (!product) {
-            throw new Error(`Product "${productId}" not found.`);
-          }
+          if (!product) throw new Error(`Product "${productId}" not found.`);
           actualProductId = product.id;
-          console.log(`✅ Resolved to product ID: ${actualProductId} (${product.name})`);
         }
 
-        // ─── 2. Ensure size and quantity are numbers ──────────
         const parsedSize = typeof size === 'number' ? size : parseInt(size, 10);
         const parsedQuantity = typeof quantity === 'number' ? quantity : parseInt(quantity, 10);
-        if (isNaN(parsedSize) || parsedSize <= 0) {
-          throw new Error('Invalid size. Please provide a valid size number.');
-        }
-        if (isNaN(parsedQuantity) || parsedQuantity < 1) {
-          throw new Error('Quantity must be at least 1.');
+
+        if (isNaN(parsedSize) || parsedSize <= 0) throw new Error('Invalid size.');
+        if (isNaN(parsedQuantity) || parsedQuantity < 1) throw new Error('Quantity must be at least 1.');
+
+        const product = await prisma.product.findUnique({
+          where: { id: actualProductId },
+          include: { variants: true },
+        });
+        if (!product) throw new Error('Product not found.');
+
+        let finalColor = color;
+        if (!finalColor || finalColor.trim() === '') {
+          const availableColors = [...new Set(product.variants.map((v: Variant) => v.color))];
+          if (availableColors.length === 0) throw new Error('No variants available.');
+          finalColor = availableColors[0];
+          console.warn(`⚠️ No colour provided, defaulting to ${finalColor}.`);
         }
 
-        // ─── 3. Find the matching variant ──────────────────────
         const variant = await prisma.variant.findFirst({
           where: {
             productId: actualProductId,
             size: parsedSize,
-            color: { equals: color, mode: 'insensitive' },
+            color: { equals: finalColor, mode: 'insensitive' },
           },
           include: { product: true },
         });
-
         if (!variant) {
-          throw new Error(`Variant not found for product ${actualProductId}, size ${parsedSize}, color ${color}`);
+          const availableColors = await prisma.variant.findMany({
+            where: { productId: actualProductId, size: parsedSize },
+            select: { color: true },
+          }).then(vs => vs.map(v => v.color));
+          const colorList = [...new Set(availableColors)].join(', ');
+          throw new Error(
+            `No variant for size ${parsedSize} and colour "${finalColor}". Available: ${colorList || 'none'}.`
+          );
         }
 
-        // ─── 4. Get or create cart ─────────────────────────────
-        let cart = await prisma.cart.findUnique({
-          where: { sessionId: effectiveSessionId },
-        });
-        if (!cart) {
-          cart = await prisma.cart.create({
-            data: { sessionId: effectiveSessionId },
-          });
-        }
+        let cart = await prisma.cart.findUnique({ where: { sessionId: effectiveSessionId } });
+        if (!cart) cart = await prisma.cart.create({ data: { sessionId: effectiveSessionId } });
 
-        // ─── 5. Add or update cart item ────────────────────────
-        const existingItem = await prisma.cartItem.findFirst({
-          where: {
-            cartId: cart.id,
-            productId: actualProductId,
-            variantId: variant.id,
-          },
+        const existing = await prisma.cartItem.findFirst({
+          where: { cartId: cart.id, productId: actualProductId, variantId: variant.id },
         });
 
-        if (existingItem) {
+        if (existing) {
           await prisma.cartItem.update({
-            where: { id: existingItem.id },
-            data: {
-              quantity: existingItem.quantity + parsedQuantity,
-              price: variant.product.price,
-            },
+            where: { id: existing.id },
+            data: { quantity: existing.quantity + parsedQuantity, price: variant.product.price },
           });
         } else {
           await prisma.cartItem.create({
@@ -235,30 +359,20 @@ export async function POST(req: NextRequest) {
 
         return {
           success: true,
-          message: `Added ${parsedQuantity} x ${variant.product.name} (${parsedSize} / ${color}) to your cart.`
+          message: `✅ Added ${parsedQuantity} x ${variant.product.name} (Size ${parsedSize} / ${finalColor}) to your cart.`,
         };
       },
     },
 
     showCart: {
-      description: 'Display the current cart contents. Call this whenever the user asks about their cart or wants to checkout.',
+      description: 'Display current cart contents.',
       inputSchema: z.object({}),
       execute: async (_args: any) => {
-        console.log(`🛒 showCart called for session ${effectiveSessionId}`);
-
         const cart = await prisma.cart.findUnique({
           where: { sessionId: effectiveSessionId },
-          include: {
-            items: {
-              include: { product: true, variant: true },
-            },
-          },
+          include: { items: { include: { product: true, variant: true } } },
         });
-
-        if (!cart || cart.items.length === 0) {
-          return { items: [], total: 0, message: 'Your cart is empty.' };
-        }
-
+        if (!cart || cart.items.length === 0) return { items: [], total: 0, message: 'Your cart is empty.' };
         const items = cart.items.map((item) => ({
           id: item.id,
           productId: item.productId,
@@ -269,42 +383,61 @@ export async function POST(req: NextRequest) {
           price: item.price,
           subtotal: item.price * item.quantity,
         }));
-
         const total = items.reduce((sum, i) => sum + i.subtotal, 0);
-
         return {
           items,
           total,
-          message: `Your cart has ${items.length} item(s) totaling ${total.toLocaleString()} FCFA.`,
+          message: `Your cart has ${items.length} item(s) totalling ${total.toLocaleString()} FCFA.`,
         };
       },
     },
 
+    removeFromCart: {
+      description: 'Remove an item from the cart using itemId.',
+      inputSchema: z.object({ itemId: z.string().min(1) }),
+      execute: async ({ itemId }: any) => {
+        const cartItem = await prisma.cartItem.findUnique({
+          where: { id: itemId },
+          include: { cart: true },
+        });
+        if (!cartItem) throw new Error('Item not found.');
+        if (cartItem.cart.sessionId !== effectiveSessionId) throw new Error('Permission denied.');
+        await prisma.cartItem.delete({ where: { id: itemId } });
+        const remaining = await prisma.cartItem.count({ where: { cartId: cartItem.cartId } });
+        if (remaining === 0) {
+          return { success: true, message: `✅ Removed ${cartItem.productName}. Your cart is now empty.` };
+        }
+        return { success: true, message: `✅ Removed ${cartItem.productName} from your cart.` };
+      },
+    },
+
     getCrossSellRecommendations: {
-      description: 'Analyze the cart and recommend accessories.',
+      description: 'Analyze cart and recommend accessories.',
       inputSchema: z.object({}),
       execute: async (_args: any) => {
-        console.log('🔗 getCrossSellRecommendations called');
         return { message: 'No recommendations at this time.', recommendations: [] };
       },
     },
   };
 
-  // ─── System prompt ──────────────────────────────────────────
+  // ─── SYSTEM PROMPT ──────────────────────────────────────────
 
   const systemPrompt = `
 You are "ShoeBot", an AI shopping assistant for Sabaton, a men's leather footwear shop in Buea, Cameroon.
 
-**Your primary job is to use the right tool.**
+**CRITICAL RULES FOR TOOL USE:**
+1. FOR "ADD"/"BUY" INTENT: If the user says "add", "buy", "purchase", or "I'd like to buy" → you MUST first call showProducts to display the product card with available variants (size and colour). 
+   - After showing the product, you MUST ask the user: "Which size and colour would you like?"
+   - Do NOT call addToCart until the user has provided both size and colour.
+   - If the user gives you size and colour in the same message (e.g., "size 10 black"), you may call addToCart with that information.
 
-- If the user asks about a product (e.g., "black loafers", "shoe horn", "conditioning cream") – **you MUST call the showProducts tool** immediately. Do NOT say "I'll look that up" – just call the tool.
-- If the user asks about store hours, location, returns, or contact – **call getBusinessInfo**.
-- If the user wants to add an item to cart – **call addToCart** with productId, size, color, quantity.
-- If the user asks about their cart, wants to see it, or says "proceed to checkout" – **call showCart**.
-- For greetings or casual chat, respond naturally without calling any tool.
+2. FOR SEARCHING: If the user says "show", "looking for", "do you have" → call showProducts.
 
-**IMPORTANT**: Never respond with "I'm having trouble understanding" or "Can you rephrase?" unless the user's message is completely unintelligible. If you are unsure about a product query, call showProducts with the user's last message as the category.
+3. For removing items → call removeFromCart.
+4. For business info → call getBusinessInfo.
+5. For cart summary → call showCart.
 
+**NEVER** call addToCart without first confirming size and colour with the user – unless the user explicitly provides them.
 Be concise, friendly, and always use FCFA for prices.
 `;
 
@@ -312,20 +445,19 @@ Be concise, friendly, and always use FCFA for prices.
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 120000);
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-    // ✅ Type assertion to bypass missing 'fetch' in type definitions
     const result = await generateText({
       model: 'anthropic/claude-opus-4.8',
       system: systemPrompt,
       messages,
       tools,
       temperature: 0.7,
-      timeout: 120000,
-      maxRetries: 2,
+      timeout: 30000,
+      maxRetries: 1,
       fetch: async (url: string, options: RequestInit) => {
         const abortController = new AbortController();
-        const id = setTimeout(() => abortController.abort(), 30000);
+        const id = setTimeout(() => abortController.abort(), 20000);
         try {
           return await fetch(url, { ...options, signal: abortController.signal });
         } finally {
@@ -365,7 +497,9 @@ Be concise, friendly, and always use FCFA for prices.
       }
     }
 
-    // ─── Fallback: manual showProducts if needed ────────────
+    let finalMessage = result.text;
+
+    // ─── FALLBACK: Force showProducts for add/buy if not called ──
     const lastUserMsg = messages.length > 0 ? messages[messages.length - 1] : null;
     if (lastUserMsg && lastUserMsg.role === 'user') {
       const text = lastUserMsg.content;
@@ -374,14 +508,20 @@ Be concise, friendly, and always use FCFA for prices.
       const showProductsCalled = result.toolCalls?.some((call: any) => call.toolName === 'showProducts');
       const showCartCalled = result.toolCalls?.some((call: any) => call.toolName === 'showCart');
 
-      if (!showProductsCalled && isProductQuery(text) && !showCartCalled) {
-        console.log('🔧 Fallback: LLM did not call showProducts. Manually calling...');
+      const lowerText = text.toLowerCase();
+      const isAddQuery = /\b(add|buy|purchase|i'?d\s+like\s+to\s+buy)\b/.test(lowerText);
+      const isCartQuery = /\b(cart|checkout|my cart)\b/.test(lowerText);
+      const isSearchQuery = /(show|get|looking|need|want|i would like|show me|do you have)/i.test(text);
+
+      if (isAddQuery && !showProductsCalled) {
+        console.log('🔧 Fallback: Add/buy intent detected but showProducts not called. Forcing...');
         let query = text
-          .replace(/^(i( '?d)? like to|i want|i need|show me|get|looking for|please)/i, '')
+          .replace(/^(i( '?d)? like to|i want|i need|show me|get|looking for|please|do you have)/i, '')
           .replace(/^buy\s*/i, '')
+          .replace(/^add\s*/i, '')
+          .replace(/\s+to my cart$/i, '')
           .trim();
         if (!query) query = text;
-        console.log(`🔎 Manual query: "${query}"`);
         try {
           const toolResult = await tools.showProducts.execute({ category: query });
           productData = toolResult.products || [];
@@ -391,9 +531,24 @@ Be concise, friendly, and always use FCFA for prices.
           productData = [];
         }
       }
-
-      const cartKeywords = ['cart', 'checkout', 'in my cart', 'proceed to checkout', 'my cart'];
-      if (!showCartCalled && cartKeywords.some(kw => text.toLowerCase().includes(kw)) && !productData.length) {
+      else if (!showProductsCalled && !showCartCalled && isSearchQuery) {
+        console.log('🔧 Fallback: LLM did not call showProducts for search. Manually calling...');
+        let query = text
+          .replace(/^(i( '?d)? like to|i want|i need|show me|get|looking for|please|do you have)/i, '')
+          .replace(/^buy\s*/i, '')
+          .replace(/\s+to my cart$/i, '')
+          .trim();
+        if (!query) query = text;
+        try {
+          const toolResult = await tools.showProducts.execute({ category: query });
+          productData = toolResult.products || [];
+          console.log(`📦 Manual fetch returned ${productData.length} products`);
+        } catch (error) {
+          console.error('❌ Manual showProducts call failed:', error);
+          productData = [];
+        }
+      }
+      else if (!showCartCalled && isCartQuery && !isAddQuery) {
         console.log('🔧 Fallback: LLM did not call showCart. Manually calling...');
         try {
           const cartResult = await tools.showCart.execute({});
@@ -405,13 +560,29 @@ Be concise, friendly, and always use FCFA for prices.
       }
     }
 
-    // ─── Build final response ───────────────────────────────
-    let finalMessage = result.text;
+    // ─── CHECKOUT DETECTION ─────────────────────────────────────
+    let checkout = false;
+    const checkUserMsg = messages.length > 0 ? messages[messages.length - 1] : null;
+    if (checkUserMsg && checkUserMsg.role === 'user') {
+      const lower = checkUserMsg.content.toLowerCase();
+      if (/\b(checkout|proceed to checkout|place order|complete order)\b/.test(lower)) {
+        const cart = await prisma.cart.findUnique({
+          where: { sessionId: effectiveSessionId },
+          include: { items: true },
+        });
+        if (cart && cart.items.length > 0) {
+          checkout = true;
+        } else {
+          finalMessage = "Your cart is empty. Please add items before checking out.";
+        }
+      }
+    }
 
+    // ─── Build final response ───────────────────────────────
     if (productData.length > 0) {
       const productNames = productData.map(p => p.name).slice(0, 3).join(', ');
       const more = productData.length > 3 ? ` and ${productData.length - 3} more` : '';
-      finalMessage = `Here are some products matching your search: ${productNames}${more}. Take a look at the cards below! 👟`;
+      finalMessage = `Here are some products matching your search: ${productNames}${more}. Take a look at the cards below! 👟\n\nWhich one would you like? Please specify the size and colour.`;
     }
     else if (cartData && cartData.items && cartData.items.length > 0) {
       const itemList = cartData.items.map((item: any) => 
@@ -442,6 +613,7 @@ Be concise, friendly, and always use FCFA for prices.
       recommendations,
       products: productData,
       cart: cartData ? cartData.items : null,
+      checkout, // ← NEW: flag to trigger checkout modal
     });
   } catch (error) {
     console.error('❌ Chat API error:', error);
@@ -451,6 +623,7 @@ Be concise, friendly, and always use FCFA for prices.
         products: [],
         recommendations: [],
         cart: null,
+        checkout: false,
       },
       { status: 500 }
     );

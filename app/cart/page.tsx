@@ -117,7 +117,6 @@ export default function CartPage() {
     <main className="bg-white min-h-screen">
       <Navbar />
 
-      {/* Hero – matches other pages */}
       <div className="pt-24 pb-8 bg-white">
         <div className="container-custom text-center">
           <span className="text-amber-600 text-sm tracking-widest font-serif uppercase">Your selection</span>
@@ -156,14 +155,12 @@ export default function CartPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Cart Items - Left column */}
             <div className="lg:col-span-2 space-y-4">
               {cart.map((item) => (
                 <div 
                   key={item.id} 
                   className="bg-white border border-gray-100 rounded-lg shadow-sm hover:shadow-md transition p-4 flex gap-4"
                 >
-                  {/* Product image placeholder */}
                   <div className="w-20 h-20 bg-gray-100 rounded-md flex items-center justify-center overflow-hidden">
                     {item.imageUrl ? (
                       <Image
@@ -224,7 +221,6 @@ export default function CartPage() {
               ))}
             </div>
 
-            {/* Order Summary - Right column (sticky) */}
             <div className="lg:sticky lg:top-24 h-fit">
               <div className="bg-white border border-gray-100 rounded-lg shadow-sm p-6">
                 <h2 className="text-xl font-medium text-gray-800 mb-4">Order Summary</h2>
@@ -267,7 +263,6 @@ export default function CartPage() {
                 </p>
               </div>
 
-              {/* Trust badges */}
               <div className="mt-6 grid grid-cols-3 gap-2 text-center text-xs text-gray-500 border-t border-gray-100 pt-6">
                 <div><Truck className="mx-auto mb-1" size={18} strokeWidth={1.5} /> Free Delivery</div>
                 <div><RotateCcw className="mx-auto mb-1" size={18} strokeWidth={1.5} /> 7 Days Returns</div>

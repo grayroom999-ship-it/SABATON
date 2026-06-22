@@ -43,11 +43,14 @@ export default function ChatBot() {
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
 
+  const [selectedVariants, setSelectedVariants] = useState<Record<string, { size: number; color: string }>>({});
+  const [addingProductId, setAddingProductId] = useState<string | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
-  // ─── Helper to get sessionId (from state or localStorage) ──
+  // ─── Helper to get sessionId ────────────────────────────────
   const getSessionId = (): string => {
     if (sessionId) return sessionId;
     let sid = localStorage.getItem('chat_session_id');
@@ -55,7 +58,6 @@ export default function ChatBot() {
       sid = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
       localStorage.setItem('chat_session_id', sid);
     }
-    // Update state asynchronously
     setSessionId(sid);
     return sid;
   };
@@ -101,7 +103,7 @@ export default function ChatBot() {
     if (isOpen) fetchCart();
   }, [isOpen, sessionId]);
 
-  // ─── Custom events (chat to buy) ──────────────────────────
+  // ─── Custom events ──────────────────────────────────────────
   useEffect(() => {
     const handleAddProduct = (event: CustomEvent) => {
       const { productName, size, color, quantity } = event.detail;
@@ -118,11 +120,20 @@ export default function ChatBot() {
       setIsOpen(true);
       setTimeout(() => inputRef.current?.focus(), 100);
     };
+    const handleChatMessage = (event: CustomEvent) => {
+      const { message } = event.detail;
+      if (message) {
+        setInput(message);
+        setTimeout(() => sendMessage(message), 300);
+      }
+    };
     window.addEventListener('chatbot:addProduct', handleAddProduct as EventListener);
     window.addEventListener('chatbot:open', handleOpenChat);
+    window.addEventListener('chatbot:message', handleChatMessage as EventListener);
     return () => {
       window.removeEventListener('chatbot:addProduct', handleAddProduct as EventListener);
       window.removeEventListener('chatbot:open', handleOpenChat);
+      window.removeEventListener('chatbot:message', handleChatMessage as EventListener);
     };
     // eslint-disable-next-line
   }, []);
@@ -230,49 +241,54 @@ export default function ChatBot() {
 
   const cartTotal = cart.reduce((sum, item) => sum + item.subtotal, 0);
 
-  // ─── Search product by name from API ─────────────────────
-  const fetchProductByName = async (name: string) => {
-    try {
-      const response = await fetch(`/api/products?search=${encodeURIComponent(name)}&limit=5`);
-      if (!response.ok) return null;
-      const data = await response.json();
-      let products = data;
-      if (data.products && Array.isArray(data.products)) {
-        products = data.products;
-      }
-      if (Array.isArray(products) && products.length > 0) {
-        const lowerName = name.toLowerCase();
-        const exact = products.find((p: any) => p.name.toLowerCase() === lowerName);
-        if (exact) return exact;
-        return products[0];
-      }
-      return null;
-    } catch (error) {
-      console.error('Error fetching product:', error);
-      return null;
+  // ─── Clear Conversation ──────────────────────────────────────
+  const handleClearChat = () => {
+    if (confirm('Clear all conversation history? This will not affect your cart.')) {
+      clearMessages();
+      addMessage({
+        role: 'assistant',
+        content: "🔄 Conversation cleared. How can I help you with your shoe needs today? 👞",
+      });
+      toast.success('Chat history cleared');
     }
   };
 
-  // ─── Helper to extract product & size from text ──────────
-  const extractProductDetails = (text: string) => {
-    const sizeMatch = text.match(/size\s*(\d{2})/i);
-    let size: number | undefined = sizeMatch ? parseInt(sizeMatch[1]) : undefined;
-    const colorMatch = text.match(/color\s*(\w+)/i);
-    let color: string | undefined = colorMatch ? colorMatch[1].toLowerCase() : undefined;
+  // ─── Get image URL with fallback ─────────────────────────────
+  const getImageUrl = (product: any): string => {
+    if (product.image && product.image.startsWith('http')) {
+      return product.image;
+    }
+    if (product.image) {
+      return product.image;
+    }
+    return PLACEHOLDER_SVG;
+  };
 
-    let productName = '';
-    const lower = text.toLowerCase();
-    for (const [cachedName] of productCache) {
-      if (lower.includes(cachedName.toLowerCase())) {
-        productName = cachedName;
-        break;
+  // ─── Handle variant selection ────────────────────────────────
+  const handleVariantChange = (productId: string, field: 'size' | 'color', value: string | number) => {
+    setSelectedVariants(prev => ({
+      ...prev,
+      [productId]: {
+        ...(prev[productId] || { size: 0, color: '' }),
+        [field]: value,
       }
+    }));
+  };
+
+  const getUniqueOptions = (variants: any[], field: 'size' | 'color') => {
+    const values = variants.map(v => v[field]);
+    return [...new Set(values)].sort((a, b) => (typeof a === 'number' ? a - b : a.localeCompare(b)));
+  };
+
+  const initSelectedVariant = (product: any) => {
+    const pid = product.id;
+    if (!selectedVariants[pid] && product.variants && product.variants.length > 0) {
+      const first = product.variants[0];
+      setSelectedVariants(prev => ({
+        ...prev,
+        [pid]: { size: first.size, color: first.color },
+      }));
     }
-    if (!productName) {
-      const match = text.match(/(?:add|buy)\s+(.+?)(?:\s+size|\s+to|\s*$)/i);
-      if (match) productName = match[1].trim();
-    }
-    return { productName, size, color };
   };
 
   // ─── Send message ──────────────────────────────────────────
@@ -280,52 +296,8 @@ export default function ChatBot() {
     const userMessage = messageText || input;
     if (!userMessage.trim() || isLoading) return;
 
-    // Ensure sessionId is ready
     getSessionId();
 
-    const lower = userMessage.toLowerCase();
-    const isAddIntent = lower.includes('add') || lower.includes('buy');
-    let added = false;
-    let extractedProductName = '';
-    let extractedSize: number | undefined;
-    let extractedColor: string | undefined;
-
-    // ─── 1. If user wants to buy/add, try to add immediately ──
-    if (isAddIntent) {
-      const { productName, size, color } = extractProductDetails(userMessage);
-      extractedProductName = productName;
-      extractedSize = size;
-      extractedColor = color;
-
-      if (productName) {
-        let product = productCache.get(productName.toLowerCase());
-        if (!product) {
-          product = await fetchProductByName(productName);
-          if (product) productCache.set(product.name.toLowerCase(), product);
-        }
-        if (product) {
-          let variant = product.variants?.[0];
-          if (size && product.variants) {
-            const matched = product.variants.find((v: any) => v.size === size);
-            if (matched) variant = matched;
-          }
-          if (variant) {
-            const finalColor = color || variant.color || 'Brown';
-            const success = await addToCart(product.id, variant.size, finalColor, 1);
-            if (success) {
-              added = true;
-              toast.success(`Added ${product.name} (${variant.size}/${finalColor}) to cart!`);
-            }
-          } else {
-            toast.error('No variant found for that product');
-          }
-        } else {
-          console.log('Product not found in cache or API, will retry after AI response.');
-        }
-      }
-    }
-
-    // ─── 2. Add user message to chat ─────────────────────────
     addMessage({
       role: 'user',
       content: userMessage,
@@ -334,7 +306,6 @@ export default function ChatBot() {
     setIsLoading(true);
 
     try {
-      // ─── 3. Send to AI ────────────────────────────────────
       const history = messages.concat({
         id: 'temp',
         role: 'user',
@@ -358,14 +329,12 @@ export default function ChatBot() {
 
       const assistantContent = data.message || "I'm having trouble understanding. Can you rephrase?";
 
-      // ─── 4. Cache products from AI response ──────────────
       if (data.products && data.products.length > 0) {
         data.products.forEach((p: any) => {
           productCache.set(p.name.toLowerCase(), p);
         });
       }
 
-      // ─── 5. Add AI reply ──────────────────────────────────
       addMessage({
         role: 'assistant',
         content: assistantContent,
@@ -374,67 +343,24 @@ export default function ChatBot() {
         cart: data.cart || [],
       });
 
-      // ─── 6. FALLBACK: If we didn't add from user message ──
-      if (!added) {
-        // First, try the AI's response: check if it contains "add to cart"
-        const addPhrases = ['add to your cart', 'added to your cart', 'add to cart', 'adding to your cart'];
-        const lowerContent = assistantContent.toLowerCase();
-        const shouldAdd = addPhrases.some(phrase => lowerContent.includes(phrase));
+      await fetchCart();
 
-        if (shouldAdd) {
-          const { productName, size, color } = extractProductDetails(assistantContent);
-          if (productName) {
-            let product = productCache.get(productName.toLowerCase());
-            if (!product) {
-              product = await fetchProductByName(productName);
-              if (product) productCache.set(product.name.toLowerCase(), product);
-            }
-            if (product) {
-              let variant = product.variants?.[0];
-              if (size && product.variants) {
-                const matched = product.variants.find((v: any) => v.size === size);
-                if (matched) variant = matched;
-              }
-              if (variant) {
-                const finalColor = color || variant.color || 'Brown';
-                await addToCart(product.id, variant.size, finalColor, 1);
-              }
-            }
-          } else {
-            // Use first product from AI response
-            if (data.products && data.products.length > 0) {
-              const first = data.products[0];
-              const firstVariant = first.variants?.[0];
-              if (firstVariant) {
-                await addToCart(first.id, firstVariant.size, firstVariant.color, 1);
-              }
-            }
-          }
-        } else {
-          // ─── NEW: If user had intent but we couldn't add earlier, try again now ──
-          if (isAddIntent && data.products && data.products.length > 0) {
-            let productToAdd = null;
-            if (extractedProductName) {
-              const lowerName = extractedProductName.toLowerCase();
-              productToAdd = data.products.find((p: any) => p.name.toLowerCase().includes(lowerName));
-            }
-            if (!productToAdd) {
-              productToAdd = data.products[0];
-            }
-            if (productToAdd) {
-              let variant = productToAdd.variants?.[0];
-              if (extractedSize && productToAdd.variants) {
-                const matched = productToAdd.variants.find((v: any) => v.size === extractedSize);
-                if (matched) variant = matched;
-              }
-              if (variant) {
-                const finalColor = extractedColor || variant.color || 'Brown';
-                await addToCart(productToAdd.id, variant.size, finalColor, 1);
-              }
-            }
-          }
-        }
+      if (data.products && data.products.length > 0) {
+        data.products.forEach((p: any) => {
+          initSelectedVariant(p);
+        });
       }
+
+      // ─── CHECKOUT FLAG ──────────────────────────────────────
+      if (data.checkout) {
+        // Close the cart sidebar if open
+        setShowCart(false);
+        // Open the checkout modal
+        setShowCheckoutModal(true);
+        // Refresh cart to ensure latest items
+        await fetchCart();
+      }
+
     } catch (error) {
       console.error('Error sending message:', error);
       toast.error('Network error. Please try again.');
@@ -550,6 +476,13 @@ export default function ChatBot() {
             </div>
           </div>
           <div className="flex gap-1">
+            <button
+              onClick={handleClearChat}
+              className="p-2 hover:bg-amber-800 rounded-full transition"
+              title="Clear conversation"
+            >
+              <Trash2 size={16} />
+            </button>
             <button onClick={() => setShowCart(!showCart)} className="relative p-2 hover:bg-amber-800 rounded-full transition">
               <ShoppingBag size={18} />
               {cart.length > 0 && (
@@ -582,9 +515,9 @@ export default function ChatBot() {
                 <div className="space-y-4">
                   {cart.map((item) => (
                     <div key={item.id} className="flex gap-3 border-b pb-3">
-                      <div className="w-16 h-16 bg-gray-100 rounded flex items-center justify-center">
+                      <div className="w-16 h-16 bg-gray-100 rounded flex items-center justify-center overflow-hidden">
                         {item.imageUrl ? (
-                          <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover rounded" />
+                          <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
                         ) : (
                           <span className="text-2xl">👞</span>
                         )}
@@ -738,65 +671,92 @@ export default function ChatBot() {
                   <div className="mt-3 pt-2 border-t border-gray-200">
                     <p className="font-semibold text-amber-700 text-xs mb-2">🛍️ Products found:</p>
                     <div className="space-y-3">
-                      {message.products.map((product) => (
-                        <div key={product.id} className="bg-gray-50 p-2 rounded-lg border border-gray-100">
-                          <div className="flex gap-3 items-start">
-                            <div className="w-16 h-16 bg-gray-200 rounded flex-shrink-0 flex items-center justify-center overflow-hidden">
-                              <img
-                                src={product.image || '/images/placeholder.jpg'}
-                                alt={product.name}
-                                className="w-full h-full object-cover"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).src = PLACEHOLDER_SVG;
-                                }}
-                              />
-                            </div>
-                            <div className="flex-1">
-                              <h4 className="font-semibold text-sm">{product.name}</h4>
-                              <p className="text-xs text-gray-500">
-                                {product.material} • {product.gender} • {product.category}
-                              </p>
-                              <p className="text-amber-600 font-bold text-sm">{product.price.toLocaleString()} FCFA</p>
-                              {product.variants && product.variants.length > 0 && (
-                                <div className="mt-1 flex flex-wrap gap-1">
-                                  {product.variants.slice(0, 3).map((v) => (
-                                    <span key={v.id} className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded">
-                                      {v.size} / {v.color}
-                                    </span>
-                                  ))}
-                                  {product.variants.length > 3 && (
-                                    <span className="text-[10px] text-gray-400">+{product.variants.length - 3} more</span>
-                                  )}
-                                </div>
-                              )}
-                              <div className="flex flex-wrap gap-2 mt-2">
+                      {message.products.map((product) => {
+                        if (!selectedVariants[product.id] && product.variants && product.variants.length > 0) {
+                          const first = product.variants[0];
+                          setSelectedVariants(prev => ({
+                            ...prev,
+                            [product.id]: { size: first.size, color: first.color },
+                          }));
+                        }
+
+                        const selected = selectedVariants[product.id] || { size: 0, color: '' };
+                        const sizes = product.variants ? getUniqueOptions(product.variants, 'size') : [];
+                        const colors = product.variants ? getUniqueOptions(product.variants, 'color') : [];
+
+                        return (
+                          <div key={product.id} className="bg-gray-50 p-2 rounded-lg border border-gray-100">
+                            <div className="flex gap-3 items-start">
+                              <div className="w-20 h-20 bg-gray-200 rounded flex-shrink-0 flex items-center justify-center overflow-hidden">
+                                <img
+                                  src={getImageUrl(product)}
+                                  alt={product.name}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).src = PLACEHOLDER_SVG;
+                                  }}
+                                />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-semibold text-sm truncate">{product.name}</h4>
+                                <p className="text-xs text-gray-500 truncate">
+                                  {product.material} • {product.gender} • {product.category}
+                                </p>
+                                <p className="text-amber-600 font-bold text-sm">{product.price.toLocaleString()} FCFA</p>
+
                                 {product.variants && product.variants.length > 0 ? (
-                                  <>
+                                  <div className="mt-2 flex flex-wrap gap-2 items-center">
+                                    <select
+                                      value={selected.size}
+                                      onChange={(e) => handleVariantChange(product.id, 'size', Number(e.target.value))}
+                                      className="text-xs border rounded px-2 py-1 bg-white"
+                                    >
+                                      {sizes.map((s) => (
+                                        <option key={s} value={s}>{s}</option>
+                                      ))}
+                                    </select>
+                                    <select
+                                      value={selected.color}
+                                      onChange={(e) => handleVariantChange(product.id, 'color', e.target.value)}
+                                      className="text-xs border rounded px-2 py-1 bg-white"
+                                    >
+                                      {colors.map((c) => (
+                                        <option key={c} value={c}>{c}</option>
+                                      ))}
+                                    </select>
                                     <button
-                                      onClick={() => {
-                                        const firstVariant = product.variants[0];
-                                        addToCart(product.id, firstVariant.size, firstVariant.color, 1);
+                                      onClick={async () => {
+                                        if (selected.size && selected.color) {
+                                          setAddingProductId(product.id);
+                                          await addToCart(product.id, selected.size, selected.color, 1);
+                                          setAddingProductId(null);
+                                        } else {
+                                          toast.error('Please select size and colour');
+                                        }
                                       }}
-                                      className="bg-amber-600 text-white text-xs px-3 py-1 rounded-full hover:bg-amber-700 transition"
+                                      disabled={!selected.size || !selected.color || addingProductId === product.id}
+                                      className="bg-amber-600 text-white text-xs px-3 py-1 rounded-full hover:bg-amber-700 transition disabled:opacity-50"
                                     >
-                                      Add to Cart
+                                      {addingProductId === product.id ? 'Adding...' : 'Add to Cart'}
                                     </button>
-                                    <Link
-                                      href={`/products/${product.id}`}
-                                      target="_blank"
-                                      className="inline-flex items-center gap-1 text-xs text-amber-600 hover:underline"
-                                    >
-                                      View Product <ExternalLink size={12} />
-                                    </Link>
-                                  </>
+                                  </div>
                                 ) : (
                                   <span className="text-xs text-gray-400 italic block">No variants available</span>
                                 )}
+
+                                <div className="mt-1">
+                                  <Link
+                                    href={`/products/${product.id}`}
+                                    className="inline-flex items-center gap-1 text-xs text-amber-600 hover:underline"
+                                  >
+                                    View Product <ExternalLink size={12} />
+                                  </Link>
+                                </div>
                               </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -806,7 +766,7 @@ export default function ChatBot() {
                   <div className="mt-3 pt-2 border-t border-gray-200">
                     <p className="font-semibold text-amber-700 text-xs mb-2">🛒 Your Cart Summary:</p>
                     <div className="space-y-1 text-xs">
-                      {message.cart.map((item) => (
+                      {message.cart.map((item: any) => (
                         <div key={item.id} className="flex justify-between border-b border-gray-100 pb-1">
                           <span>{item.name} ({item.size}/{item.color}) × {item.quantity}</span>
                           <span className="font-medium">{item.subtotal.toLocaleString()} FCFA</span>
@@ -814,7 +774,7 @@ export default function ChatBot() {
                       ))}
                       <div className="flex justify-between font-bold mt-1">
                         <span>Total</span>
-                        <span>{message.cart.reduce((sum, i) => sum + i.subtotal, 0).toLocaleString()} FCFA</span>
+                        <span>{message.cart.reduce((sum: number, i: any) => sum + i.subtotal, 0).toLocaleString()} FCFA</span>
                       </div>
                     </div>
                   </div>
@@ -825,7 +785,7 @@ export default function ChatBot() {
                   <div className="mt-3 pt-2 border-t border-gray-200">
                     <p className="font-semibold text-amber-700 text-xs mb-2">✨ You might also like:</p>
                     <div className="space-y-2">
-                      {message.recommendations.map((rec, idx) => (
+                      {message.recommendations.map((rec: any, idx: number) => (
                         <div key={idx} className="flex justify-between items-center bg-gray-50 p-2 rounded">
                           <div>
                             <span className="text-sm font-medium">{rec.name}</span>

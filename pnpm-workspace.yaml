@@ -1,6 +1,8 @@
 allowBuilds:
   '@parcel/watcher': true
   '@prisma/engines': true
+  bufferutil: true
   prisma: true
+  protobufjs: true
   sharp: true
   unrs-resolver: true

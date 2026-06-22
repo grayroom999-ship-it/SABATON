@@ -46,7 +46,7 @@ export default function ProductsPage() {
   const [error, setError] = useState<string | null>(null)
   const [showFilters, setShowFilters] = useState(false)
 
-  // Admin state
+  // Admin state (unchanged)
   const [adminMode, setAdminMode] = useState(false)
   const [adminPassword, setAdminPassword] = useState('')
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false)
@@ -106,7 +106,7 @@ export default function ProductsPage() {
     try {
       const params = new URLSearchParams({
         page: page.toString(),
-        limit: '6',
+        limit: '8', // ← changed from 6 to 8
         ...(selectedCategory !== 'all' && { category: selectedCategory }),
         ...(selectedGender !== 'all' && { gender: selectedGender }),
         ...(searchTerm && { search: searchTerm }),
@@ -687,7 +687,7 @@ export default function ProductsPage() {
 
         {loading ? (
           <div className="products-grid">
-            {[...Array(6)].map((_, i) => (
+            {[...Array(8)].map((_, i) => ( // ← changed from 6 to 8
               <div key={i} className="bg-gray-100 animate-pulse rounded-lg" style={{ aspectRatio: '1 / 1' }}></div>
             ))}
           </div>

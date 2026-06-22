@@ -3,11 +3,12 @@
     "name": "Black Casual Loafer Boot",
     "price": 45000,
     "productType": "shoe",
-    "gender": "mens",
+    "gender": "male",
     "material": "leather",
     "shoeCategories": ["casual", "boots"],
     "description": "Comfortable handcrafted leather loafer boot perfect for daily wear around Buea. Breathable lining and durable rubber sole.",
-    "imageUrl": "/images/black-casual-loafer-boot.jpg",
+    "imageUrl": "/images/black-casual-loafer.jpg",
+    "hoverImageUrl": "/images/black-casual-loafer-hover.jpg",
     "variants": [
       {
         "size": "39",
@@ -57,11 +58,12 @@
     "name": "Brown Casual Loafer Boot",
     "price": 45000,
     "productType": "shoe",
-    "gender": "mens",
+    "gender": "male",
     "material": "leather",
     "shoeCategories": ["casual", "boots"],
     "description": "Comfortable handcrafted leather loafer boot perfect for daily wear around Buea. Breathable lining and durable rubber sole.",
-    "imageUrl": "/images/brown-casual-loafer-boot.jpg",
+    "imageUrl": "/images/brown-casual-loafer.jpg",
+    "hoverImageUrl": "/images/brown-casual-loafer-hover.jpg",
     "variants": [
       {
         "size": "39",
