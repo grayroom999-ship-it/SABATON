@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 // ─── FAQ Knowledge Base ──────────────────────────────────────
-// Broad, encompassing keyword mapping (case-insensitive)
+// Kept as the single source of truth for policies
 const FAQ_RESPONSES: Record<string, string> = {
   // ─── Returns & Exchanges ──────────────────────────────────
   "return policy": "↩️ **Return Policy:** We offer a **14-day return policy** for unused items in original packaging. Contact us at hello@sabaton.cm to initiate a return. We'll guide you through the process. 😊",
@@ -73,27 +73,31 @@ const FAQ_RESPONSES: Record<string, string> = {
   "about": "👞 Sabaton handcrafts leather shoes in Buea using full‑grain leather and traditional techniques.",
 };
 
-function getFAQResponse(text: string): string | null {
-  const lower = text.toLowerCase();
-  // Try exact key matches first
-  for (const [key, response] of Object.entries(FAQ_RESPONSES)) {
-    if (lower.includes(key.toLowerCase())) {
-      return response;
-    }
-  }
-  // Try matching word boundaries for more precise matches
-  const words = lower.split(/\s+/);
-  for (const [key, response] of Object.entries(FAQ_RESPONSES)) {
-    const keyLower = key.toLowerCase();
-    // If the key is a single word, check if it appears as a whole word
-    if (!keyLower.includes(' ') && words.some(w => w === keyLower)) {
-      return response;
-    }
-  }
-  return null;
+// ─── Semantic FAQ Index (built once) ──────────────────────
+interface FaqEntry {
+  key: string;
+  embedding: number[];
+  response: string;
 }
 
-// ─── Local embedding model ──────────────────────────────────
+let faqIndex: FaqEntry[] = [];
+let faqIndexBuilt = false;
+
+async function buildFAQIndex() {
+  if (faqIndexBuilt) return;
+  console.log('🧠 Building FAQ index...');
+  const { pipeline } = await import('@xenova/transformers');
+  const extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+  for (const [key, response] of Object.entries(FAQ_RESPONSES)) {
+    const result = await extractor(key, { pooling: 'mean', normalize: true });
+    const embedding = Array.from(result.data);
+    faqIndex.push({ key, embedding, response });
+  }
+  faqIndexBuilt = true;
+  console.log(`✅ FAQ index built with ${faqIndex.length} entries.`);
+}
+
+// ─── Local embedding model (shared) ──────────────────────
 let localExtractor: any = null;
 let modelLoading: Promise<any> | null = null;
 
@@ -109,6 +113,14 @@ async function getLocalEmbedding(text: string): Promise<number[]> {
   }
   const result = await localExtractor(text, { pooling: 'mean', normalize: true });
   return Array.from(result.data);
+}
+
+// ─── Cosine similarity ─────────────────────────────────────
+function cosineSimilarity(vecA: number[], vecB: number[]): number {
+  const dot = vecA.reduce((sum, a, i) => sum + a * vecB[i], 0);
+  const magA = Math.sqrt(vecA.reduce((sum, a) => sum + a * a, 0));
+  const magB = Math.sqrt(vecB.reduce((sum, b) => sum + b * b, 0));
+  return dot / (magA * magB);
 }
 
 // ─── Helper: Re‑order results to put exact match first ────
@@ -167,23 +179,79 @@ export async function POST(req: NextRequest) {
 
   console.log('📥 Received messages:', messages);
 
-  // ─── FIRST: Check FAQ ──────────────────────────────────────
+  // ─── FIRST: Semantic FAQ Retrieval ──────────────────────
   const lastUserMsg = messages.length > 0 ? messages[messages.length - 1] : null;
   if (lastUserMsg && lastUserMsg.role === 'user') {
-    const faqResponse = getFAQResponse(lastUserMsg.content);
-    if (faqResponse) {
-      console.log('📚 FAQ match found – returning instant response.');
-      return Response.json({
-        message: faqResponse,
-        products: [],
-        recommendations: [],
-        cart: null,
-        checkout: false,
-        hasMore: false,
-        totalCount: 0,
-      });
+    await buildFAQIndex(); // ensure index is built once
+    const userEmbedding = await getLocalEmbedding(lastUserMsg.content);
+    let bestMatch: FaqEntry | null = null;
+    let bestSimilarity = 0;
+
+    for (const entry of faqIndex) {
+      const sim = cosineSimilarity(userEmbedding, entry.embedding);
+      if (sim > bestSimilarity) {
+        bestSimilarity = sim;
+        bestMatch = entry;
+      }
+    }
+
+    const THRESHOLD = 0.72; // tune this based on testing
+    if (bestMatch && bestSimilarity >= THRESHOLD) {
+      console.log(`📚 FAQ semantic match found: "${bestMatch.key}" (sim=${bestSimilarity.toFixed(3)})`);
+
+      // Rephrase the fact with generative AI
+      const systemPrompt = `
+        You are a friendly Sabaton shoe assistant.
+        You MUST use the provided "Rule Fact" to answer the user.
+        - Rephrase the rule fact in a warm, conversational tone.
+        - Add a short empathetic opening (e.g., "Great question!").
+        - If the fact mentions specific numbers (e.g., 14 days, 1,500 FCFA), DO NOT change them.
+        - Keep it under 60 words.
+        - Do not add any extra policies or information not in the fact.
+      `;
+      const prompt = `User asked: "${lastUserMsg.content}"\n\nRule Fact to use: "${bestMatch.response}"`;
+
+      try {
+        const result = await generateText({
+          model: 'anthropic/claude-opus-4.8',
+          system: systemPrompt,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.7,
+          maxRetries: 1,
+        } as any);
+
+        const rephrased = result.text;
+        console.log('✅ Rephrased FAQ response:', rephrased);
+
+        return Response.json({
+          message: rephrased,
+          products: [],
+          recommendations: [],
+          cart: null,
+          checkout: false,
+          hasMore: false,
+          totalCount: 0,
+        });
+      } catch (err) {
+        console.error('❌ Rephrasing failed, falling back to raw fact:', err);
+        // Fallback: return the raw fact (still better than nothing)
+        return Response.json({
+          message: bestMatch.response,
+          products: [],
+          recommendations: [],
+          cart: null,
+          checkout: false,
+          hasMore: false,
+          totalCount: 0,
+        });
+      }
+    } else {
+      console.log(`📚 No FAQ match above threshold (best=${bestSimilarity.toFixed(3)}). Proceeding to AI tools.`);
     }
   }
+
+  // ─── Continue with original tool‑based flow ──────────────
+  // (rest of the code unchanged)
 
   const BUSINESS_INFO = {
     location: 'Molyko, Buea, Cameroon (near the main roundabout)',

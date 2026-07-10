@@ -5,8 +5,6 @@ import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -20,12 +18,16 @@ export async function POST(request: Request) {
     }
 
     const recipientEmail = process.env.VENDOR_EMAIL || 'grayroom999@gmail.com';
-    const senderEmail = process.env.SENDER_EMAIL || 'onboarding@resend.dev'; // fallback to test
+    const senderEmail = process.env.SENDER_EMAIL || 'onboarding@resend.dev';
 
+    // Check for API key before instantiating Resend
     if (!process.env.RESEND_API_KEY) {
       console.error('RESEND_API_KEY missing');
       return NextResponse.json({ error: 'Email not configured' }, { status: 500 });
     }
+
+    // Instantiate Resend inside the handler to avoid build-time errors
+    const resend = new Resend(process.env.RESEND_API_KEY);
 
     const { data, error } = await resend.emails.send({
       from: `Buea Leather Shoes <${senderEmail}>`,
