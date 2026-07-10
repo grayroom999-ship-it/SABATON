@@ -7,7 +7,6 @@ import Link from 'next/link';
 import { useChat, type Message } from '@/context/ChatContext';
 import { simulatePayment } from '../app/utils/payment';
 
-// ─── SVG placeholder ──────────────────────────────────────────
 const PLACEHOLDER_SVG =
   "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23f0f0f0'/%3E%3Ctext x='50' y='50' font-family='Arial' font-size='12' fill='%23999' text-anchor='middle' dominant-baseline='central'%3ENo Image%3C/text%3E%3C/svg%3E";
 
@@ -23,7 +22,6 @@ interface CartItem {
   imageUrl?: string;
 }
 
-// ─── Product cache ──────────────────────────────────────────
 const productCache = new Map<string, any>();
 
 export default function ChatBot() {
@@ -50,7 +48,6 @@ export default function ChatBot() {
   const inputRef = useRef<HTMLInputElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
-  // ─── Helper to get sessionId ────────────────────────────────
   const getSessionId = (): string => {
     if (sessionId) return sessionId;
     let sid = localStorage.getItem('chat_session_id');
@@ -62,7 +59,6 @@ export default function ChatBot() {
     return sid;
   };
 
-  // ─── Scroll to bottom ──────────────────────────────────────
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -73,21 +69,17 @@ export default function ChatBot() {
     }
   }, [isOpen]);
 
-  // ─── Session & welcome ────────────────────────────────────
   useEffect(() => {
     const sid = getSessionId();
     setSessionId(sid);
-
     if (messages.length === 0) {
       addMessage({
         role: 'assistant',
         content: "Hello! 👋 I'm ShoeBot, your AI shopping assistant for SABATON Leather Shoes.\n\nI can help you:\n• Find the perfect leather shoes\n• Add items to your cart\n• Check your cart and checkout\n\nWhat would you like to do today?",
       });
     }
-    // eslint-disable-next-line
   }, []);
 
-  // ─── Click outside to close ──────────────────────────────
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (isOpen && chatContainerRef.current && !chatContainerRef.current.contains(event.target as Node)) {
@@ -98,12 +90,10 @@ export default function ChatBot() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen]);
 
-  // ─── Fetch cart on open ──────────────────────────────────
   useEffect(() => {
     if (isOpen) fetchCart();
   }, [isOpen, sessionId]);
 
-  // ─── Custom events ──────────────────────────────────────────
   useEffect(() => {
     const handleAddProduct = (event: CustomEvent) => {
       const { productName, size, color, quantity } = event.detail;
@@ -135,10 +125,7 @@ export default function ChatBot() {
       window.removeEventListener('chatbot:open', handleOpenChat);
       window.removeEventListener('chatbot:message', handleChatMessage as EventListener);
     };
-    // eslint-disable-next-line
   }, []);
-
-  // ─── Cart API ──────────────────────────────────────────────
 
   const fetchCart = async () => {
     const sid = getSessionId();
@@ -241,7 +228,6 @@ export default function ChatBot() {
 
   const cartTotal = cart.reduce((sum, item) => sum + item.subtotal, 0);
 
-  // ─── Clear Conversation ──────────────────────────────────────
   const handleClearChat = () => {
     if (confirm('Clear all conversation history? This will not affect your cart.')) {
       clearMessages();
@@ -253,7 +239,6 @@ export default function ChatBot() {
     }
   };
 
-  // ─── Get image URL with fallback ─────────────────────────────
   const getImageUrl = (product: any): string => {
     if (product.image && product.image.startsWith('http')) {
       return product.image;
@@ -264,7 +249,6 @@ export default function ChatBot() {
     return PLACEHOLDER_SVG;
   };
 
-  // ─── Handle variant selection ────────────────────────────────
   const handleVariantChange = (productId: string, field: 'size' | 'color', value: string | number) => {
     setSelectedVariants(prev => ({
       ...prev,
@@ -291,7 +275,6 @@ export default function ChatBot() {
     }
   };
 
-  // ─── Send message ──────────────────────────────────────────
   const sendMessage = async (messageText?: string) => {
     const userMessage = messageText || input;
     if (!userMessage.trim() || isLoading) return;
@@ -351,13 +334,9 @@ export default function ChatBot() {
         });
       }
 
-      // ─── CHECKOUT FLAG ──────────────────────────────────────
       if (data.checkout) {
-        // Close the cart sidebar if open
         setShowCart(false);
-        // Open the checkout modal
         setShowCheckoutModal(true);
-        // Refresh cart to ensure latest items
         await fetchCart();
       }
 
@@ -368,8 +347,6 @@ export default function ChatBot() {
       setIsLoading(false);
     }
   };
-
-  // ─── Checkout payment ────────────────────────────────────────
 
   const handleCheckoutPayment = async () => {
     if (cart.length === 0) {
@@ -438,8 +415,6 @@ export default function ChatBot() {
     }
   };
 
-  // ─── Render ──────────────────────────────────────────────────
-
   if (!isOpen) {
     return (
       <button
@@ -476,11 +451,7 @@ export default function ChatBot() {
             </div>
           </div>
           <div className="flex gap-1">
-            <button
-              onClick={handleClearChat}
-              className="p-2 hover:bg-amber-800 rounded-full transition"
-              title="Clear conversation"
-            >
+            <button onClick={handleClearChat} className="p-2 hover:bg-amber-800 rounded-full transition" title="Clear conversation">
               <Trash2 size={16} />
             </button>
             <button onClick={() => setShowCart(!showCart)} className="relative p-2 hover:bg-amber-800 rounded-full transition">
@@ -558,7 +529,7 @@ export default function ChatBot() {
           </div>
         )}
 
-        {/* ─── CHECKOUT MODAL ───────────────────────────────────── */}
+        {/* Checkout Modal */}
         {showCheckoutModal && (
           <div className="absolute inset-0 bg-white z-20 flex flex-col">
             <div className="p-4 border-b flex justify-between items-center bg-amber-50">

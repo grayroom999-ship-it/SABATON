@@ -2,9 +2,11 @@ import { Pool } from 'pg';
 import { pipeline } from '@xenova/transformers';
 import 'dotenv/config';
 
+// ─── Connection pool using pg (more reliable for scripts) ──
 const pool = new Pool({
   connectionString: process.env.SUPABASE_DB_URL,
   connectionTimeoutMillis: 10000,
+  idleTimeoutMillis: 30000,
 });
 
 async function regenerateEmbeddings() {
