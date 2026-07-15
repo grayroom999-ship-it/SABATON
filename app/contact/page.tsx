@@ -170,6 +170,32 @@ export default function ContactPage() {
         </div>
       </div>
 
+      {/* ✨ NEW: Size Guide Section – placeholder for a size chart image */}
+      <div className="py-10 bg-white border-t border-gray-100">
+        <div className="container-custom">
+          <div className="max-w-3xl mx-auto text-center">
+            <h2 className="text-2xl font-light tracking-tight text-gray-800 mb-2">
+              Find Your Perfect Fit
+            </h2>
+            <p className="text-gray-500 text-sm mb-6">
+              Use our size guide to measure your feet correctly – if you're unsure, just ask us!
+            </p>
+            {/* Placeholder for the size chart image */}
+            <div className="w-full bg-gray-50 border border-gray-200 rounded-sm p-4 flex items-center justify-center aspect-[4/3] md:aspect-[16/9]">
+              <div className="text-center">
+                <span className="text-gray-400 text-sm block">📏 Size Chart Image</span>
+                <span className="text-gray-300 text-xs">(replace with your own chart image)</span>
+                {/* Uncomment and replace src when you have the actual image */}
+                {/* <img src="/images/size-chart.jpg" alt="Shoe size guide" className="w-full h-auto max-h-80 object-contain" /> */}
+              </div>
+            </div>
+            <p className="text-xs text-gray-400 mt-3">
+              Need help? <a href="#" className="text-amber-600 hover:underline">Contact us</a> for personalised sizing advice.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Small CTA band */}
       <div className="py-10 bg-amber-50/40 border-y border-amber-100">
         <div className="container-custom text-center">

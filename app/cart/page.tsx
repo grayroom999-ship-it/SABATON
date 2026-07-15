@@ -12,7 +12,7 @@ interface CartItem {
   id: number
   name: string
   size: number
-  color: string
+  color: string   // kept for potential future use, but not displayed
   quantity: number
   price: number
   subtotal: number
@@ -177,8 +177,9 @@ export default function CartPage() {
                   
                   <div className="flex-1">
                     <h3 className="font-medium text-gray-800">{item.name}</h3>
+                    {/* Colour removed – now only size */}
                     <p className="text-sm text-gray-500 mt-0.5">
-                      Size {item.size} • {item.color}
+                      Size {item.size}
                     </p>
                     <p className="text-amber-600 font-semibold mt-1">
                       {item.price.toLocaleString()} FCFA

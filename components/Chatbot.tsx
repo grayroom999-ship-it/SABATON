@@ -15,7 +15,7 @@ interface CartItem {
   productId: string;
   name: string;
   size: number;
-  color: string;
+  // color removed
   quantity: number;
   price: number;
   subtotal: number;
@@ -34,20 +34,24 @@ export default function ChatBot() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showCart, setShowCart] = useState(false);
 
+  // ─── Checkout Modal State ─────────────────────────────────
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [checkoutData, setCheckoutData] = useState<any>(null);
   const [paymentMethod, setPaymentMethod] = useState<'mtn_momo' | 'orange_money'>('mtn_momo');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
 
-  const [selectedVariants, setSelectedVariants] = useState<Record<string, { size: number; color: string }>>({});
+  // State: only size per product (color removed)
+  const [selectedSizes, setSelectedSizes] = useState<Record<string, number>>({});
   const [addingProductId, setAddingProductId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
+  // ─── Session ID ────────────────────────────────────────────
   const getSessionId = (): string => {
     if (sessionId) return sessionId;
     let sid = localStorage.getItem('chat_session_id');
@@ -59,6 +63,7 @@ export default function ChatBot() {
     return sid;
   };
 
+  // ─── Effects ──────────────────────────────────────────────
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -96,7 +101,7 @@ export default function ChatBot() {
 
   useEffect(() => {
     const handleAddProduct = (event: CustomEvent) => {
-      const { productName, size, color, quantity } = event.detail;
+      const { productName, size, quantity } = event.detail;
       setIsOpen(true);
       if (productName) {
         let msg = `I'd like to buy ${productName}`;
@@ -127,6 +132,7 @@ export default function ChatBot() {
     };
   }, []);
 
+  // ─── Cart CRUD ────────────────────────────────────────────
   const fetchCart = async () => {
     const sid = getSessionId();
     try {
@@ -140,25 +146,9 @@ export default function ChatBot() {
     }
   };
 
-  const addToCart = async (productId: string, size: number, color: string, quantity: number) => {
+  // Updated: no color parameter
+  const addToCart = async (productId: string, size: number, quantity: number) => {
     const sid = getSessionId();
-    if (!productId || typeof productId !== 'string') {
-      toast.error('Invalid product ID');
-      return false;
-    }
-    if (typeof size !== 'number' || isNaN(size) || size <= 0) {
-      toast.error('Invalid size');
-      return false;
-    }
-    if (!color || typeof color !== 'string') {
-      toast.error('Invalid color');
-      return false;
-    }
-    if (typeof quantity !== 'number' || quantity < 1) {
-      toast.error('Quantity must be at least 1');
-      return false;
-    }
-
     try {
       const response = await fetch('/api/cart/add', {
         method: 'POST',
@@ -166,7 +156,8 @@ export default function ChatBot() {
           'Content-Type': 'application/json',
           'x-session-id': sid,
         },
-        body: JSON.stringify({ productId, size, color, quantity }),
+        // Send only productId, size, quantity (color removed)
+        body: JSON.stringify({ productId, size, quantity }),
       });
       if (response.ok) {
         await fetchCart();
@@ -239,42 +230,37 @@ export default function ChatBot() {
     }
   };
 
+  // ─── Helpers for product cards ──────────────────────────
   const getImageUrl = (product: any): string => {
-    if (product.image && product.image.startsWith('http')) {
-      return product.image;
-    }
-    if (product.image) {
-      return product.image;
-    }
+    if (product.image && product.image.startsWith('http')) return product.image;
+    if (product.image) return product.image;
     return PLACEHOLDER_SVG;
   };
 
-  const handleVariantChange = (productId: string, field: 'size' | 'color', value: string | number) => {
-    setSelectedVariants(prev => ({
+  // Only size selection now
+  const handleSizeChange = (productId: string, size: number) => {
+    setSelectedSizes(prev => ({
       ...prev,
-      [productId]: {
-        ...(prev[productId] || { size: 0, color: '' }),
-        [field]: value,
-      }
+      [productId]: size,
     }));
   };
 
-  const getUniqueOptions = (variants: any[], field: 'size' | 'color') => {
-    const values = variants.map(v => v[field]);
-    return [...new Set(values)].sort((a, b) => (typeof a === 'number' ? a - b : a.localeCompare(b)));
+  const getUniqueSizes = (variants: any[]) => {
+    const sizes = variants.map(v => v.size);
+    return [...new Set(sizes)].sort((a, b) => a - b);
   };
 
-  const initSelectedVariant = (product: any) => {
+  const initSelectedSize = (product: any) => {
     const pid = product.id;
-    if (!selectedVariants[pid] && product.variants && product.variants.length > 0) {
-      const first = product.variants[0];
-      setSelectedVariants(prev => ({
+    if (!selectedSizes[pid] && product.variants && product.variants.length > 0) {
+      setSelectedSizes(prev => ({
         ...prev,
-        [pid]: { size: first.size, color: first.color },
+        [pid]: product.variants[0].size,
       }));
     }
   };
 
+  // ─── Send message ────────────────────────────────────────
   const sendMessage = async (messageText?: string) => {
     const userMessage = messageText || input;
     if (!userMessage.trim() || isLoading) return;
@@ -330,13 +316,28 @@ export default function ChatBot() {
 
       if (data.products && data.products.length > 0) {
         data.products.forEach((p: any) => {
-          initSelectedVariant(p);
+          initSelectedSize(p);
         });
       }
 
-      if (data.checkout) {
-        setShowCart(false);
+      // ─── Show checkout modal if flag is true ────────────
+      if (data.checkout && data.checkoutData) {
+        setCheckoutData(data.checkoutData);
+        // Try to get profile info for pre‑fill
+        try {
+          const profileRes = await fetch('/api/user/profile', {
+            headers: { 'x-session-id': getSessionId() },
+          });
+          const profileData = await profileRes.json();
+          if (profileData.exists) {
+            setPhoneNumber(profileData.phone || '');
+            setDeliveryAddress(profileData.address || '');
+          }
+        } catch (e) {
+          // ignore
+        }
         setShowCheckoutModal(true);
+        setShowCart(false);
         await fetchCart();
       }
 
@@ -348,11 +349,9 @@ export default function ChatBot() {
     }
   };
 
+  // ─── Handle Payment ──────────────────────────────────────
   const handleCheckoutPayment = async () => {
-    if (cart.length === 0) {
-      toast.error('Your cart is empty');
-      return;
-    }
+    if (!checkoutData) return;
     if (!phoneNumber || phoneNumber.length < 9) {
       setPaymentError('Please enter a valid phone number (e.g., 6XXXXXXXX)');
       return;
@@ -366,8 +365,9 @@ export default function ChatBot() {
     setPaymentError(null);
 
     try {
+      // Simulate payment
       const paymentResult = await simulatePayment({
-        amount: cartTotal,
+        amount: checkoutData.total,
         currency: 'XAF',
         method: paymentMethod,
         phoneNumber,
@@ -377,6 +377,7 @@ export default function ChatBot() {
         throw new Error(paymentResult.message || 'Payment failed');
       }
 
+      // Create order
       const response = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -388,32 +389,32 @@ export default function ChatBot() {
         }),
       });
 
-      const data = await response.json();
+      const orderData = await response.json();
+      if (!response.ok) throw new Error(orderData.error || 'Order creation failed');
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create order');
-      }
-
+      // Clear cart and close modal
       await fetchCart();
       setShowCheckoutModal(false);
       toast.success('Order placed successfully! 🎉');
 
       addMessage({
         role: 'assistant',
-        content: `✅ Your order #${data.orderId} has been confirmed!\n\nWe'll prepare your shoes and deliver them within 24 hours in Buea.\n\nThank you for shopping with us! 👞`,
+        content: `✅ Order #${orderData.orderNumber} confirmed! Tracking: ${orderData.trackingNumber}. We'll deliver to ${deliveryAddress} within 24 hours. Thank you!`,
       });
 
       setCart([]);
       setPhoneNumber('');
       setDeliveryAddress('');
     } catch (err: any) {
-      console.error('Checkout error:', err);
+      console.error(err);
       setPaymentError(err.message || 'Payment failed. Please try again.');
       toast.error('Checkout failed');
     } finally {
       setIsProcessingPayment(false);
     }
   };
+
+  // ─── Render ──────────────────────────────────────────────
 
   if (!isOpen) {
     return (
@@ -495,7 +496,8 @@ export default function ChatBot() {
                       </div>
                       <div className="flex-1">
                         <h4 className="font-semibold text-sm">{item.name}</h4>
-                        <p className="text-xs text-gray-500">Size {item.size} • {item.color}</p>
+                        {/* Removed colour from display */}
+                        <p className="text-xs text-gray-500">Size {item.size}</p>
                         <p className="text-amber-600 font-bold text-sm">{item.price.toLocaleString()} FCFA</p>
                         <div className="flex items-center gap-2 mt-2">
                           <button onClick={() => updateCartItem(item.id, item.quantity - 1)} className="w-6 h-6 border rounded flex items-center justify-center hover:bg-gray-100"><Minus size={12} /></button>
@@ -518,6 +520,24 @@ export default function ChatBot() {
                 <button
                   onClick={() => {
                     setShowCart(false);
+                    // Directly open checkout modal with current cart
+                    const cartData = {
+                      items: cart,
+                      total: cartTotal,
+                    };
+                    setCheckoutData(cartData);
+                    // Try to pre-fill profile
+                    fetch('/api/user/profile', {
+                      headers: { 'x-session-id': getSessionId() },
+                    })
+                      .then(res => res.json())
+                      .then(data => {
+                        if (data.exists) {
+                          setPhoneNumber(data.phone || '');
+                          setDeliveryAddress(data.address || '');
+                        }
+                      })
+                      .catch(() => {});
                     setShowCheckoutModal(true);
                   }}
                   className="w-full bg-amber-600 text-white py-2 rounded-lg font-semibold hover:bg-amber-700 transition"
@@ -529,32 +549,41 @@ export default function ChatBot() {
           </div>
         )}
 
-        {/* Checkout Modal */}
-        {showCheckoutModal && (
+        {/* ─── CHECKOUT MODAL ────────────────────────────────── */}
+        {showCheckoutModal && checkoutData && (
           <div className="absolute inset-0 bg-white z-20 flex flex-col">
             <div className="p-4 border-b flex justify-between items-center bg-amber-50">
               <h3 className="font-bold text-lg">Checkout</h3>
-              <button onClick={() => setShowCheckoutModal(false)} className="text-gray-500 hover:text-gray-700">
+              <button
+                onClick={() => setShowCheckoutModal(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
                 <X size={20} />
               </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {cart.map((item) => (
-                <div key={item.id} className="flex justify-between items-center border-b pb-2">
-                  <div>
-                    <p className="font-medium">{item.name}</p>
-                    <p className="text-sm text-gray-500">Size {item.size} • {item.color} × {item.quantity}</p>
+              {/* Order summary - removed colour */}
+              <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+                <h4 className="font-semibold text-sm text-gray-700">Order Summary</h4>
+                {checkoutData.items.map((item: any) => (
+                  <div key={item.id} className="flex justify-between items-center border-b border-gray-200 pb-1 text-sm">
+                    <div>
+                      <span className="font-medium">{item.name}</span>
+                      <span className="text-gray-500 text-xs ml-2">
+                        Size {item.size} × {item.quantity}
+                      </span>
+                    </div>
+                    <span className="font-semibold">{item.subtotal.toLocaleString()} FCFA</span>
                   </div>
-                  <p className="font-semibold">{item.subtotal.toLocaleString()} FCFA</p>
+                ))}
+                <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-300">
+                  <span>Total</span>
+                  <span className="text-amber-600">{checkoutData.total.toLocaleString()} FCFA</span>
                 </div>
-              ))}
-
-              <div className="flex justify-between font-bold text-lg pt-2 border-t">
-                <span>Total</span>
-                <span className="text-amber-600">{cartTotal.toLocaleString()} FCFA</span>
               </div>
 
+              {/* Payment details */}
               <div className="space-y-3">
                 <div>
                   <label className="block text-sm font-medium mb-1">Payment Method</label>
@@ -610,7 +639,7 @@ export default function ChatBot() {
                 ) : (
                   <>
                     <CreditCard size={18} />
-                    Pay {cartTotal.toLocaleString()} FCFA
+                    Pay {checkoutData.total.toLocaleString()} FCFA
                   </>
                 )}
               </button>
@@ -618,7 +647,7 @@ export default function ChatBot() {
           </div>
         )}
 
-        {/* Chat Messages */}
+        {/* ─── Chat Messages ────────────────────────────────── */}
         <div
           className="flex-1 overflow-y-auto px-4 py-3 space-y-2"
           style={{
@@ -637,23 +666,21 @@ export default function ChatBot() {
               >
                 <div className="whitespace-pre-wrap">{message.content}</div>
 
-                {/* ─── PRODUCT CARDS ─── */}
+                {/* ─── PRODUCT CARDS (no colour dropdown) ─── */}
                 {message.products && message.products.length > 0 && (
                   <div className="mt-3 pt-2 border-t border-gray-200">
                     <p className="font-semibold text-amber-700 text-xs mb-2">🛍️ Products found:</p>
                     <div className="space-y-3">
                       {message.products.map((product) => {
-                        if (!selectedVariants[product.id] && product.variants && product.variants.length > 0) {
-                          const first = product.variants[0];
-                          setSelectedVariants(prev => ({
+                        if (!selectedSizes[product.id] && product.variants && product.variants.length > 0) {
+                          setSelectedSizes(prev => ({
                             ...prev,
-                            [product.id]: { size: first.size, color: first.color },
+                            [product.id]: product.variants[0].size,
                           }));
                         }
 
-                        const selected = selectedVariants[product.id] || { size: 0, color: '' };
-                        const sizes = product.variants ? getUniqueOptions(product.variants, 'size') : [];
-                        const colors = product.variants ? getUniqueOptions(product.variants, 'color') : [];
+                        const selectedSize = selectedSizes[product.id] || 0;
+                        const sizes = product.variants ? getUniqueSizes(product.variants) : [];
 
                         return (
                           <div key={product.id} className="bg-gray-50 p-2 rounded-lg border border-gray-100">
@@ -678,34 +705,26 @@ export default function ChatBot() {
                                 {product.variants && product.variants.length > 0 ? (
                                   <div className="mt-2 flex flex-wrap gap-2 items-center">
                                     <select
-                                      value={selected.size}
-                                      onChange={(e) => handleVariantChange(product.id, 'size', Number(e.target.value))}
+                                      value={selectedSize}
+                                      onChange={(e) => handleSizeChange(product.id, Number(e.target.value))}
                                       className="text-xs border rounded px-2 py-1 bg-white"
                                     >
                                       {sizes.map((s) => (
                                         <option key={s} value={s}>{s}</option>
                                       ))}
                                     </select>
-                                    <select
-                                      value={selected.color}
-                                      onChange={(e) => handleVariantChange(product.id, 'color', e.target.value)}
-                                      className="text-xs border rounded px-2 py-1 bg-white"
-                                    >
-                                      {colors.map((c) => (
-                                        <option key={c} value={c}>{c}</option>
-                                      ))}
-                                    </select>
                                     <button
                                       onClick={async () => {
-                                        if (selected.size && selected.color) {
+                                        if (selectedSize) {
                                           setAddingProductId(product.id);
-                                          await addToCart(product.id, selected.size, selected.color, 1);
+                                          // No colour parameter now
+                                          await addToCart(product.id, selectedSize, 1);
                                           setAddingProductId(null);
                                         } else {
-                                          toast.error('Please select size and colour');
+                                          toast.error('Please select a size');
                                         }
                                       }}
-                                      disabled={!selected.size || !selected.color || addingProductId === product.id}
+                                      disabled={!selectedSize || addingProductId === product.id}
                                       className="bg-amber-600 text-white text-xs px-3 py-1 rounded-full hover:bg-amber-700 transition disabled:opacity-50"
                                     >
                                       {addingProductId === product.id ? 'Adding...' : 'Add to Cart'}
@@ -732,14 +751,14 @@ export default function ChatBot() {
                   </div>
                 )}
 
-                {/* ─── CART SUMMARY ─── */}
+                {/* ─── CART SUMMARY (no colour) ─── */}
                 {message.cart && message.cart.length > 0 && (
                   <div className="mt-3 pt-2 border-t border-gray-200">
                     <p className="font-semibold text-amber-700 text-xs mb-2">🛒 Your Cart Summary:</p>
                     <div className="space-y-1 text-xs">
                       {message.cart.map((item: any) => (
                         <div key={item.id} className="flex justify-between border-b border-gray-100 pb-1">
-                          <span>{item.name} ({item.size}/{item.color}) × {item.quantity}</span>
+                          <span>{item.name} (Size {item.size}) × {item.quantity}</span>
                           <span className="font-medium">{item.subtotal.toLocaleString()} FCFA</span>
                         </div>
                       ))}
@@ -751,7 +770,7 @@ export default function ChatBot() {
                   </div>
                 )}
 
-                {/* ─── RECOMMENDATIONS ─── */}
+                {/* ─── RECOMMENDATIONS (no colour) ─── */}
                 {message.recommendations && message.recommendations.length > 0 && (
                   <div className="mt-3 pt-2 border-t border-gray-200">
                     <p className="font-semibold text-amber-700 text-xs mb-2">✨ You might also like:</p>
@@ -765,8 +784,8 @@ export default function ChatBot() {
                           <button
                             onClick={() => {
                               const size = rec.defaultSize ?? 42;
-                              const color = rec.defaultColor || 'Brown';
-                              addToCart(rec.id, size, color, 1);
+                              // colour removed, just pass size
+                              addToCart(rec.id, size, 1);
                             }}
                             className="bg-amber-600 text-white px-2 py-1 rounded text-xs hover:bg-amber-700 transition"
                           >

@@ -1,3 +1,8 @@
+// prisma/seed-100.ts
+// ─────────────────────────────────────────────────────────────
+// SEED – All EU sizes (men: 42-48, women: 36-38)
+// Clears all data using TRUNCATE ... CASCADE (safe and fast)
+
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
@@ -18,10 +23,9 @@ console.log('🔍 Using connection string:', connectionString ? '✅ set' : '❌
 
 // ─── Helpers ──────────────────────────────────────────────────
 
-function generateSku(productName: string, size: number, color: string | null): string {
+function generateSku(productName: string, size: number): string {
   const base = productName.replace(/\s+/g, '-').toLowerCase().slice(0, 20);
-  const colorCode = color ? color.slice(0, 3).toLowerCase() : 'n/a';
-  return `${base}-${size}-${colorCode}`;
+  return `${base}-${size}`;
 }
 
 function buildSearchText(product: any): string {
@@ -34,10 +38,9 @@ function buildSearchText(product: any): string {
   return `${name} – ${description} Made from ${material}. ${style.charAt(0).toUpperCase() + style.slice(1)} ${genderLabel} shoe. Perfect for ${category === 'formal' ? 'business, weddings, and formal events' : category === 'casual' ? 'weekends, travel, and casual outings' : 'all seasons and smart-casual occasions'}.`;
 }
 
-// ─── Products ──────────────────────────────────────────────────
-
+// ─── Products (all EU sizes) ──────────────────────────────────
 const shoeProducts: any[] = [
-  // ============ MEN (13) ============
+  // ============ MEN (13) – ALL EU SIZES ============
   {
     name: "Heritage Full‑Grain Oxford",
     price: 78000,
@@ -48,11 +51,8 @@ const shoeProducts: any[] = [
     hoverImageUrl: '/images/classic-oxford-2.jpg',
     gender: 'male',
     crossSellScore: 85,
-    variants: [
-      { size: 8, color: 'Black', stock: 20, price: 78000 },
-      { size: 9, color: 'Black', stock: 25, price: 78000 },
-      { size: 10, color: 'Brown', stock: 15, price: 78000 },
-    ],
+    sizes: [42, 44, 46],
+    stockPerSize: 20,
   },
   {
     name: "Premium Suede Chukka Boots",
@@ -64,10 +64,8 @@ const shoeProducts: any[] = [
     hoverImageUrl: '/images/Sabaton-shoes-oslo-2-high-boots-last-black-calf-vibram-dainite-sole.jpg',
     gender: 'male',
     crossSellScore: 70,
-    variants: [
-      { size: 9, color: 'Black', stock: 18, price: 89400 },
-      { size: 10, color: 'Grey', stock: 12, price: 89400 },
-    ],
+    sizes: [44, 46],
+    stockPerSize: 15,
   },
   {
     name: "Suede Weekend Loafers",
@@ -79,10 +77,8 @@ const shoeProducts: any[] = [
     hoverImageUrl: '/images/Tan-Casual-Loafer-Boot.jpg',
     gender: 'male',
     crossSellScore: 60,
-    variants: [
-      { size: 10, color: 'Tan', stock: 30, price: 54000 },
-      { size: 11, color: 'Black', stock: 22, price: 54000 },
-    ],
+    sizes: [46, 48],
+    stockPerSize: 25,
   },
   {
     name: "Balmoral Suede Oxford",
@@ -94,10 +90,8 @@ const shoeProducts: any[] = [
     hoverImageUrl: '/images/Sabaton-leather-suede-balmoral-2.jpg',
     gender: 'male',
     crossSellScore: 80,
-    variants: [
-      { size: 8, color: 'Brown', stock: 14, price: 65700 },
-      { size: 9, color: 'Black', stock: 19, price: 65700 },
-    ],
+    sizes: [42, 44],
+    stockPerSize: 16,
   },
   {
     name: "Budapest Brogue Oxford",
@@ -109,10 +103,8 @@ const shoeProducts: any[] = [
     hoverImageUrl: '/images/Brown-Budapest-Bp-2.jpg',
     gender: 'male',
     crossSellScore: 90,
-    variants: [
-      { size: 9, color: 'Brown', stock: 10, price: 95400 },
-      { size: 10, color: 'Black', stock: 8, price: 95400 },
-    ],
+    sizes: [44, 46],
+    stockPerSize: 12,
   },
   {
     name: "Budapest High‑Top Boots",
@@ -124,10 +116,8 @@ const shoeProducts: any[] = [
     hoverImageUrl: '/images/SABATON-shoes-budapest-high-boots(2).jpg',
     gender: 'male',
     crossSellScore: 75,
-    variants: [
-      { size: 9, color: 'Black', stock: 16, price: 84000 },
-      { size: 10, color: 'Brown', stock: 13, price: 84000 },
-    ],
+    sizes: [44, 46],
+    stockPerSize: 14,
   },
   {
     name: "Driving Moccasins",
@@ -139,10 +129,8 @@ const shoeProducts: any[] = [
     hoverImageUrl: '/images/Balmoral-Casual-Loafer-Boot(2).jpg',
     gender: 'male',
     crossSellScore: 50,
-    variants: [
-      { size: 8, color: 'Brown', stock: 25, price: 48000 },
-      { size: 9, color: 'Grey', stock: 20, price: 48000 },
-    ],
+    sizes: [42, 44],
+    stockPerSize: 22,
   },
   {
     name: "Classic Derby Shoes",
@@ -154,10 +142,8 @@ const shoeProducts: any[] = [
     hoverImageUrl: '/images/derby-shoes-hover.jpg',
     gender: 'male',
     crossSellScore: 80,
-    variants: [
-      { size: 10, color: 'Black', stock: 12, price: 71400 },
-      { size: 11, color: 'Brown', stock: 9, price: 71400 },
-    ],
+    sizes: [46, 48],
+    stockPerSize: 10,
   },
   {
     name: "Budapest Balmoral Oxford",
@@ -169,10 +155,8 @@ const shoeProducts: any[] = [
     hoverImageUrl: '/images/Budapest- Balmoral-leather.jpg',
     gender: 'male',
     crossSellScore: 95,
-    variants: [
-      { size: 10, color: 'Brown', stock: 11, price: 107400 },
-      { size: 11, color: 'Olive', stock: 7, price: 107400 },
-    ],
+    sizes: [46, 48],
+    stockPerSize: 9,
   },
   {
     name: "Leather Chukka Boots",
@@ -184,10 +168,8 @@ const shoeProducts: any[] = [
     hoverImageUrl: '/images/shoes-chukka-boots-2.jpg',
     gender: 'male',
     crossSellScore: 40,
-    variants: [
-      { size: 9, color: 'Beige', stock: 30, price: 36000 },
-      { size: 10, color: 'Navy', stock: 28, price: 36000 },
-    ],
+    sizes: [44, 46],
+    stockPerSize: 29,
   },
   {
     name: "Cognac Antique Monk Strap",
@@ -199,10 +181,8 @@ const shoeProducts: any[] = [
     hoverImageUrl: '/images/SABATON-last-antique-cognac.jpg',
     gender: 'male',
     crossSellScore: 85,
-    variants: [
-      { size: 8, color: 'Brown', stock: 10, price: 101400 },
-      { size: 9, color: 'Black', stock: 12, price: 101400 },
-    ],
+    sizes: [42, 44],
+    stockPerSize: 11,
   },
   {
     name: "Museum Calf Oxford",
@@ -214,10 +194,8 @@ const shoeProducts: any[] = [
     hoverImageUrl: '/images/SABATON-handcrafted-museum-calf-single-sole-2.jpg',
     gender: 'male',
     crossSellScore: 90,
-    variants: [
-      { size: 8, color: 'Brown', stock: 10, price: 101400 },
-      { size: 9, color: 'Black', stock: 12, price: 101400 },
-    ],
+    sizes: [42, 44],
+    stockPerSize: 11,
   },
   {
     name: "Black Budapest Brogue Oxford",
@@ -229,13 +207,11 @@ const shoeProducts: any[] = [
     hoverImageUrl: '/images/Black-Budapest-Bp.jpg',
     gender: 'male',
     crossSellScore: 95,
-    variants: [
-      { size: 8, color: 'Brown', stock: 10, price: 101400 },
-      { size: 9, color: 'Black', stock: 12, price: 101400 },
-    ],
+    sizes: [42, 44],
+    stockPerSize: 11,
   },
 
-  // ============ WOMEN (9) ============
+  // ============ WOMEN (9) – ALL EU SIZES ============
   {
     name: "Leather Ballet Flats",
     price: 53400,
@@ -246,10 +222,8 @@ const shoeProducts: any[] = [
     hoverImageUrl: '/images/CORI_PERLAROSEWIND.jpg',
     gender: 'female',
     crossSellScore: 50,
-    variants: [
-      { size: 6, color: 'Beige', stock: 20, price: 53400 },
-      { size: 7, color: 'Nude', stock: 18, price: 53400 },
-    ],
+    sizes: [36, 37],
+    stockPerSize: 19,
   },
   {
     name: "Struds Ballet Flats",
@@ -261,10 +235,8 @@ const shoeProducts: any[] = [
     hoverImageUrl: '/images/COMOBUSTUDS_HIBISCUS.jpg',
     gender: 'female',
     crossSellScore: 50,
-    variants: [
-      { size: 6, color: 'Brown', stock: 20, price: 53400 },
-      { size: 7, color: 'Red', stock: 18, price: 53400 },
-    ],
+    sizes: [36, 37],
+    stockPerSize: 19,
   },
   {
     name: "Block‑Heel Ankle Boots",
@@ -276,10 +248,8 @@ const shoeProducts: any[] = [
     hoverImageUrl: '/images/Sabaton-women-petra-boots-petra-2.jpg',
     gender: 'female',
     crossSellScore: 75,
-    variants: [
-      { size: 6, color: 'Black', stock: 15, price: 78000 },
-      { size: 7, color: 'Tan', stock: 10, price: 78000 },
-    ],
+    sizes: [36, 37],
+    stockPerSize: 12,
   },
   {
     name: "Petra Leather Boots",
@@ -291,11 +261,8 @@ const shoeProducts: any[] = [
     hoverImageUrl: '/images/Sabaton-petra-boots-brown-Buea-2.jpg',
     gender: 'female',
     crossSellScore: 85,
-    variants: [
-      { size: 6, color: 'Brown', stock: 12, price: 98500 },
-      { size: 7, color: 'Brown', stock: 15, price: 98500 },
-      { size: 8, color: 'Brown', stock: 10, price: 98500 },
-    ],
+    sizes: [36, 37, 38],
+    stockPerSize: 12,
   },
   {
     name: "Leather Slip‑Ons",
@@ -307,11 +274,8 @@ const shoeProducts: any[] = [
     hoverImageUrl: '/images/SABATON-Casual-Women-Leather-2.jpg',
     gender: 'female',
     crossSellScore: 60,
-    variants: [
-      { size: 6, color: 'Black', stock: 20, price: 62400 },
-      { size: 7, color: 'Tan', stock: 18, price: 62400 },
-      { size: 8, color: 'Black', stock: 14, price: 62400 },
-    ],
+    sizes: [36, 37, 38],
+    stockPerSize: 17,
   },
   {
     name: "Saddle Oxford Formal Shoes",
@@ -323,11 +287,8 @@ const shoeProducts: any[] = [
     hoverImageUrl: '/images/SABATON-women-fomal-saddle-oxford-2-.jpg',
     gender: 'female',
     crossSellScore: 90,
-    variants: [
-      { size: 6, color: 'Black/White', stock: 9, price: 87600 },
-      { size: 7, color: 'Black/White', stock: 11, price: 87600 },
-      { size: 8, color: 'Black/White', stock: 7, price: 87600 },
-    ],
+    sizes: [36, 37, 38],
+    stockPerSize: 9,
   },
   {
     name: "Block‑Heel Leather Pumps",
@@ -339,11 +300,8 @@ const shoeProducts: any[] = [
     hoverImageUrl: '/images/SABATON-women-block-heel-pumps-hover.jpg',
     gender: 'female',
     crossSellScore: 80,
-    variants: [
-      { size: 6, color: 'Black', stock: 16, price: 72300 },
-      { size: 7, color: 'Navy', stock: 12, price: 72300 },
-      { size: 8, color: 'Black', stock: 14, price: 72300 },
-    ],
+    sizes: [36, 37, 38],
+    stockPerSize: 14,
   },
   {
     name: "Lodi‑due Caramel Rose Flats",
@@ -355,13 +313,8 @@ const shoeProducts: any[] = [
     hoverImageUrl: '/images/Lodi-due-Blue-Twill-Loafers-2.jpg',
     gender: 'female',
     crossSellScore: 65,
-    variants: [
-      { size: 6, color: 'Caramel Rose', stock: 18, price: 49500 },
-      { size: 7, color: 'Caramel Rose', stock: 22, price: 49500 },
-      { size: 6, color: 'Blue', stock: 12, price: 49500 },
-      { size: 7, color: 'Blue', stock: 16, price: 49500 },
-      { size: 8, color: 'Rose', stock: 10, price: 49500 },
-    ],
+    sizes: [36, 37, 38],
+    stockPerSize: 16,
   },
   {
     name: "LISA Leather Slides",
@@ -373,17 +326,12 @@ const shoeProducts: any[] = [
     hoverImageUrl: '/images/LISASLIDESNEAKERTASSELS_MAUVE.jpg',
     gender: 'female',
     crossSellScore: 55,
-    variants: [
-      { size: 8, color: 'Brown', stock: 20, price: 42500 },
-      { size: 7, color: 'Tan', stock: 22, price: 42500 },
-      { size: 8, color: 'Purple', stock: 14, price: 42500 },
-      { size: 6, color: 'White', stock: 15, price: 42500 },
-    ],
+    sizes: [36, 37, 38],
+    stockPerSize: 18,
   },
 ];
 
-// ─── ACCESSORIES (5) ──────────────────────────────────────────
-
+// ─── ACCESSORIES ──────────────────────────────────────────────
 const accessoryProducts: any[] = [
   {
     name: "Leather Shoe Cream (Black)",
@@ -396,10 +344,6 @@ const accessoryProducts: any[] = [
     gender: 'unisex',
     accessoryType: 'cleaner',
     crossSellScore: 90,
-    variants: [
-      { size: 0, color: 'Cream', stock: 50, price: 12500 },
-      { size: 0, color: 'Black', stock: 50, price: 12500 },
-    ],
   },
   {
     name: "Suede Shoe Brush",
@@ -412,9 +356,6 @@ const accessoryProducts: any[] = [
     gender: 'unisex',
     accessoryType: 'cleaner',
     crossSellScore: 85,
-    variants: [
-      { size: 0, color: null, stock: 40, price: 18500 },
-    ],
   },
   {
     name: "Cotton Shoelaces (Black/Brown)",
@@ -427,10 +368,6 @@ const accessoryProducts: any[] = [
     gender: 'unisex',
     accessoryType: 'laces',
     crossSellScore: 70,
-    variants: [
-      { size: 0, color: 'Brown', stock: 60, price: 6500 },
-      { size: 0, color: 'Black', stock: 60, price: 6500 },
-    ],
   },
   {
     name: "Cedar Shoe Trees",
@@ -443,9 +380,6 @@ const accessoryProducts: any[] = [
     gender: 'unisex',
     accessoryType: null,
     crossSellScore: 95,
-    variants: [
-      { size: 0, color: null, stock: 30, price: 21500 },
-    ],
   },
   {
     name: "Cotton Socks (Pack of 6)",
@@ -458,9 +392,6 @@ const accessoryProducts: any[] = [
     gender: 'unisex',
     accessoryType: 'socks',
     crossSellScore: 75,
-    variants: [
-      { size: 0, color: 'White', stock: 60, price: 12000 },
-    ],
   },
 ];
 
@@ -471,18 +402,35 @@ const allProducts = [...shoeProducts, ...accessoryProducts];
 async function main() {
   console.log('🌱 Seeding database with products + accessories...');
 
-  console.log('🧹 Clearing old data...');
-  await prisma.$transaction([
-    prisma.accessoryShoeCategory.deleteMany(),
-    prisma.shoeCategoryOnProduct.deleteMany(),
-    prisma.cartItem.deleteMany(),
-    prisma.orderItem.deleteMany(),
-    prisma.variant.deleteMany(),
-    prisma.product.deleteMany(),
-    prisma.cart.deleteMany(),
-    prisma.order.deleteMany(),
-    prisma.shoeCategory.deleteMany(),
-  ]);
+  // ─── TRUNCATE ALL TABLES (CASCADE) ──────────────────────
+  console.log('🧹 Clearing all data with TRUNCATE ... CASCADE ...');
+  try {
+    await prisma.$executeRaw`
+      TRUNCATE TABLE 
+        "AddToCartEvent",
+        "ProductView",
+        "SearchQuery",
+        "PurchaseEvent",
+        "DailyProductStats",
+        "VendorNotification",
+        "OrderItem",
+        "Order",
+        "CartItem",
+        "Cart",
+        "Variant",
+        "Product",
+        "AccessoryShoeCategory",
+        "ShoeCategoryOnProduct",
+        "ShoeCategory",
+        "UserProfile",
+        "Session"
+      CASCADE;
+    `;
+    console.log('✅ All data cleared.');
+  } catch (error) {
+    console.error('❌ TRUNCATE failed:', error);
+    throw error;
+  }
 
   // Create shoe categories
   const categoryMap: Record<string, string> = {};
@@ -498,7 +446,28 @@ async function main() {
   // Insert products
   console.log(`📦 Inserting ${allProducts.length} products...`);
   for (const productData of allProducts) {
-    const { variants, category, ...productFields } = productData;
+    let variants: any[] = [];
+    if (productData.category === 'accessory') {
+      variants = [{
+        size: 0,
+        color: 'Default',
+        stock: 30,
+        price: productData.price,
+      }];
+    } else {
+      const { sizes, stockPerSize, price } = productData;
+      for (const size of sizes) {
+        variants.push({
+          size,
+          color: 'Default',
+          stock: stockPerSize || 20,
+          price: price,
+        });
+      }
+    }
+
+    const { sizes, stockPerSize, ...productFields } = productData;
+
     const searchText = buildSearchText(productData);
 
     const createdProduct = await prisma.product.create({
@@ -509,12 +478,13 @@ async function main() {
         variants: {
           create: variants.map((v: any) => ({
             ...v,
-            sku: generateSku(productData.name, v.size, v.color),
+            sku: generateSku(productData.name, v.size),
           })),
         },
       },
     });
 
+    // Link categories
     if (productData.category === 'accessory') {
       for (const catId of Object.values(categoryMap)) {
         await prisma.accessoryShoeCategory.create({
@@ -525,7 +495,7 @@ async function main() {
         });
       }
     } else {
-      const shoeCategoryId = categoryMap[category];
+      const shoeCategoryId = categoryMap[productData.category];
       if (shoeCategoryId) {
         await prisma.shoeCategoryOnProduct.create({
           data: {
@@ -534,7 +504,7 @@ async function main() {
           },
         });
       } else {
-        console.warn(`⚠️ Unknown category "${category}" for product "${productData.name}" – skipping.`);
+        console.warn(`⚠️ Unknown category "${productData.category}" for product "${productData.name}" – skipping.`);
       }
     }
   }

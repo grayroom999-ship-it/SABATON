@@ -9,7 +9,7 @@ import ChatBot from '../../components/Chatbot'
 
 interface Variant {
   size: number
-  color: string
+  color: string   // kept for compatibility, but we always set "Default"
   stock: number
 }
 
@@ -60,8 +60,7 @@ export default function ProductsPage() {
     description: '',
     imageUrl: '',
     hoverImageUrl: '',
-    sizes: '',
-    colors: '',
+    sizes: '',      // only sizes remain – no colours
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null)
@@ -106,7 +105,7 @@ export default function ProductsPage() {
     try {
       const params = new URLSearchParams({
         page: page.toString(),
-        limit: '8', // ← changed from 6 to 8
+        limit: '8',
         ...(selectedCategory !== 'all' && { category: selectedCategory }),
         ...(selectedGender !== 'all' && { gender: selectedGender }),
         ...(searchTerm && { search: searchTerm }),
@@ -275,17 +274,13 @@ export default function ProductsPage() {
       .split(',')
       .map(s => parseInt(s.trim()))
       .filter(s => !isNaN(s))
-    const colors = newProduct.colors
-      .split(',')
-      .map(c => c.trim())
-      .filter(c => c)
 
-    const variants = []
-    for (const size of sizes) {
-      for (const color of colors) {
-        variants.push({ size, color, stock: 10 })
-      }
-    }
+    // ─── REMOVED COLOURS – now we create one variant per size with a default colour ───
+    const variants = sizes.map(size => ({
+      size,
+      color: 'Default',      // fallback – can be ignored
+      stock: 10,
+    }))
 
     const finalImageUrl = newProduct.imageUrl
     const finalHoverImageUrl = newProduct.hoverImageUrl || null
@@ -320,7 +315,6 @@ export default function ProductsPage() {
         imageUrl: '',
         hoverImageUrl: '',
         sizes: '',
-        colors: '',
       })
       setSelectedImageFile(null)
       setImagePreview(null)
@@ -506,25 +500,18 @@ export default function ProductsPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Sizes (comma)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Sizes (comma separated) *</label>
                     <input
                       type="text"
+                      required
                       value={newProduct.sizes}
                       onChange={(e) => setNewProduct({ ...newProduct, sizes: e.target.value })}
                       placeholder="38,39,40,41"
                       className="w-full p-2 border border-gray-200 focus:border-amber-500 outline-none"
                     />
+                    <p className="text-xs text-gray-400 mt-1">Each size will automatically get one variant with default colour.</p>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Colors (comma)</label>
-                    <input
-                      type="text"
-                      value={newProduct.colors}
-                      onChange={(e) => setNewProduct({ ...newProduct, colors: e.target.value })}
-                      placeholder="Black,Brown,Tan"
-                      className="w-full p-2 border border-gray-200 focus:border-amber-500 outline-none"
-                    />
-                  </div>
+
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                     <textarea
@@ -687,7 +674,7 @@ export default function ProductsPage() {
 
         {loading ? (
           <div className="products-grid">
-            {[...Array(8)].map((_, i) => ( // ← changed from 6 to 8
+            {[...Array(8)].map((_, i) => (
               <div key={i} className="bg-gray-100 animate-pulse rounded-lg" style={{ aspectRatio: '1 / 1' }}></div>
             ))}
           </div>

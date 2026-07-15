@@ -32,21 +32,23 @@ export async function POST(request: NextRequest) {
     // Ensure variants is an array
     const variantsArray = Array.isArray(variants) ? variants : []
 
-    // --- Create product with variants (and optional hover image) ---
+    // --- Create product with variants (colour removed) ---
     const newProduct = await prisma.product.create({
       data: {
         name: name.trim(),
         price: parseFloat(price),
         category: category?.trim() || 'casual',
-        gender: gender,                            // 👈 plain string, matches your schema
+        gender: gender,
         description: description?.trim() || '',
         imageUrl: imageUrl?.trim() || '/images/placeholder.webp',
-        hoverImageUrl: hoverImageUrl?.trim() || null,   // 👈 only addition
+        hoverImageUrl: hoverImageUrl?.trim() || null,
         variants: {
           create: variantsArray.map((v: any) => ({
-            sku: v.sku?.trim() || `${name.trim()}-${v.size}-${v.color}`,
+            // SKU now uses only name + size (no colour)
+            sku: v.sku?.trim() || `${name.trim()}-${v.size}`,
             size: typeof v.size === 'number' ? v.size : parseInt(v.size) || 0,
-            color: v.color?.trim() || 'Default',
+            // Colour is fixed to 'Default' – we no longer accept it from input
+            color: 'Default',
             stock: typeof v.stock === 'number' ? v.stock : (v.stock ? parseInt(v.stock) : 10),
           })),
         },

@@ -313,7 +313,7 @@ export default function ProductDetailPage() {
                               : 'border-gray-200 hover:border-amber-300 text-gray-700'
                           }`}
                         >
-                          {size}
+                          EU {size}   {/* <-- EU PREFIX ADDED HERE */}
                         </button>
                       ))}
                     </div>

@@ -1,0 +1,1 @@
+export const formatEU = (size: number) => `EU ${size}`;

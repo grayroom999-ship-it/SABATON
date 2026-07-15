@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma'
+import { trackAddToCart } from '@/lib/analytics';
 
 async function getOrCreateCart(sessionId: string) {
   let cart = await prisma.cart.findUnique({
@@ -109,6 +110,15 @@ export async function POST(request: NextRequest) {
         }
       });
     }
+
+    // --- Analytics: track add to cart ---
+    await trackAddToCart(
+      variant.productId,
+      variant.id,
+      quantity,
+      cart.id,
+      sessionId
+    );
 
     return NextResponse.json({ success: true, message: `Added ${variant.product.name} size ${size} to cart` });
   } catch (error) {

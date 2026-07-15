@@ -5,11 +5,20 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { ShoppingBag, Menu, X, Phone } from 'lucide-react'
 
+interface Profile {
+  name: string;
+  // you can add more fields if needed (phone, address, etc.)
+}
+
 export default function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [cartItemCount, setCartItemCount] = useState(0)
   const [isScrolled, setIsScrolled] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
+
+  // --- New: profile state ---
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [profileLoading, setProfileLoading] = useState(true)
 
   // Listen for scroll events
   useEffect(() => {
@@ -32,7 +41,6 @@ export default function Navbar() {
   useEffect(() => {
     checkAdminStatus()
     window.addEventListener('adminAuthChanged', checkAdminStatus)
-    // Optional: also re-check when tab becomes visible (in case user logged in from another tab)
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') checkAdminStatus()
     }
@@ -58,6 +66,26 @@ export default function Navbar() {
     return () => window.removeEventListener('cartUpdated', updateCartCount)
   }, [])
 
+  // --- New: fetch user profile ---
+  useEffect(() => {
+    const sessionId = localStorage.getItem('chat_session_id')
+    if (sessionId) {
+      fetch('/api/user/profile', {
+        headers: { 'x-session-id': sessionId }
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.exists) {
+            setProfile({ name: data.name })
+          }
+        })
+        .catch(err => console.error('Failed to fetch profile:', err))
+        .finally(() => setProfileLoading(false))
+    } else {
+      setProfileLoading(false)
+    }
+  }, [])
+
   return (
     <nav className={`fixed top-0 w-full z-50 transition-all duration-300 ${
       isScrolled 
@@ -79,6 +107,13 @@ export default function Navbar() {
             <Link href="/how-it-works" className="hover:text-amber-600 transition">How It Works</Link>
             <Link href="/about" className="hover:text-amber-600 transition">Our Story</Link>
             <Link href="/contact" className="hover:text-amber-600 transition">Contact</Link>
+            
+            {/* --- New: Welcome message if profile exists --- */}
+            {!profileLoading && profile && (
+              <span className="text-sm text-gray-700 font-medium">
+                Welcome, {profile.name} 👋
+              </span>
+            )}
             
             {/* Admin Link - only shown when logged in */}
             {isAdmin && (
@@ -133,6 +168,13 @@ export default function Navbar() {
             <Link href="/how-it-works" className="block px-2 py-1 hover:text-amber-600" onClick={() => setIsMenuOpen(false)}>How It Works</Link>
             <Link href="/about" className="block px-2 py-1 hover:text-amber-600" onClick={() => setIsMenuOpen(false)}>Our Story</Link>
             <Link href="/contact" className="block px-2 py-1 hover:text-amber-600" onClick={() => setIsMenuOpen(false)}>Contact</Link>
+            
+            {/* --- New: Welcome message in mobile menu --- */}
+            {!profileLoading && profile && (
+              <div className="px-2 py-1 text-sm text-gray-700 font-medium border-t border-gray-200 pt-3">
+                Welcome, {profile.name} 👋
+              </div>
+            )}
             
             {/* Admin Link in mobile menu */}
             {isAdmin && (

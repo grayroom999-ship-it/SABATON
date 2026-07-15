@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { trackProductView } from '@/lib/analytics'
+import { getSessionId } from '@/lib/session'
 
 // Static base64 placeholder (a tiny 1x1 transparent/light-gray image)
 function getBlurDataURL(): string {
@@ -56,6 +58,15 @@ export async function GET(request: NextRequest) {
       ...product,
       blurDataUrl: getBlurDataURL(),
     }))
+
+    // --- Analytics: track each product view ---
+    const sessionId = getSessionId(request);
+    if (sessionId) {
+      // Track each product in the list (fire-and-forget)
+      for (const product of products) {
+        await trackProductView(product.id, sessionId);
+      }
+    }
 
     return NextResponse.json({
       products: productsWithBlur,
